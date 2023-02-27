@@ -45,6 +45,7 @@ export const bounds = {
       this.loops = [];
       this.messages = [];
       this.notes = [];
+      this.activations = [];
     },
     addBox: function (boxModel) {
       this.boxes.push(boxModel);
@@ -78,6 +79,7 @@ export const bounds = {
     loops: [],
     messages: [],
     notes: [],
+    activations: []
   },
   init: function () {
     this.sequenceItems = [];
@@ -698,6 +700,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
     );
 
     bounds.insert(activationData.startx, verticalPos - 10, activationData.stopx, verticalPos);
+    bounds.models.activations.push(activationData);
   }
 
   // Draw the messages/signals
@@ -730,6 +733,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
       case diagObj.db.LINETYPE.LOOP_END:
         loopModel = bounds.endLoop();
         svgDraw.drawLoop(diagram, loopModel, 'loop', conf);
+        loopModel.type = 'loop';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
         break;
@@ -756,6 +760,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
       case diagObj.db.LINETYPE.OPT_END:
         loopModel = bounds.endLoop();
         svgDraw.drawLoop(diagram, loopModel, 'opt', conf);
+        loopModel.type = 'opt';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
         break;
@@ -780,6 +785,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
       case diagObj.db.LINETYPE.ALT_END:
         loopModel = bounds.endLoop();
         svgDraw.drawLoop(diagram, loopModel, 'alt', conf);
+        loopModel.type = 'alt';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
         break;
@@ -804,6 +810,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
       case diagObj.db.LINETYPE.PAR_END:
         loopModel = bounds.endLoop();
         svgDraw.drawLoop(diagram, loopModel, 'par', conf);
+        loopModel.type = 'par';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
         break;
@@ -837,6 +844,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
       case diagObj.db.LINETYPE.CRITICAL_END:
         loopModel = bounds.endLoop();
         svgDraw.drawLoop(diagram, loopModel, 'critical', conf);
+        loopModel.type = 'critical';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
         break;
@@ -852,6 +860,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
       case diagObj.db.LINETYPE.BREAK_END:
         loopModel = bounds.endLoop();
         svgDraw.drawLoop(diagram, loopModel, 'break', conf);
+        loopModel.type = 'break';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
         break;
@@ -964,6 +973,8 @@ export const draw = function (_text: string, id: string, _version: string, diagO
   );
 
   log.debug(`models:`, bounds.models);
+  bounds.models.verticalPos = bounds.verticalPos;
+  Editor.mermaidToDrawio(bounds.models, 'sequenceDiagram');
 };
 
 /**

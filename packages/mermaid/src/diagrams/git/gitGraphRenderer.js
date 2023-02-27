@@ -525,6 +525,9 @@ export const draw = function (txt, id, ver, diagObj) {
     gitGraphConfig.diagramPadding,
     gitGraphConfig.useMaxWidth ?? conf.useMaxWidth
   );
+
+  // Graph is ready now to be converted to draw.io format
+  Editor.mermaidToDrawio({commits: allCommitsDict, branches, branchPos, commitPos, gitGraphConfig}, 'gitgraph');
 };
 
 export default {

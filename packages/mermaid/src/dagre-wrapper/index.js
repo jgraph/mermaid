@@ -158,6 +158,8 @@ export const render = (elem, graph, markers, diagramtype, id) => {
   log.warn('Graph after:', graphlibJson.write(graph));
   // log.warn('Graph ever  after:', graphlibJson.write(graph.node('A').graph));
   recursiveRender(elem, graph, diagramtype);
+  // Graph is ready now to be converted to draw.io format
+  Editor.mermaidToDrawio(graph, diagramtype);
 };
 
 // const shapeDefinitions = {};

@@ -120,6 +120,8 @@ export const draw = function (text, id, version, diagObj) {
   diagram.attr('viewBox', `${box.startx} -25 ${width} ${height + extraVertForTitle}`);
   diagram.attr('preserveAspectRatio', 'xMinYMin meet');
   diagram.attr('height', height + extraVertForTitle + 25);
+  // Graph is ready now to be converted to draw.io format
+  Editor.mermaidToDrawio({title, actors, tasks}, 'journey');
 };
 
 export const bounds = {

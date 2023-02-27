@@ -213,6 +213,8 @@ export const draw = async (text, id, version, diagObj) => {
 
   // Setup the view box and size of the svg element
   setupGraphViewbox(undefined, svg, conf.mindmap.padding, conf.mindmap.useMaxWidth);
+  // Graph is ready now to be converted to draw.io format
+  Editor.mermaidToDrawio(cy, 'Mindmap');
 };
 
 export default {

@@ -362,6 +362,8 @@ export const draw = (text, id, _version, diagObj) => {
   configureSvgSize(svg, height, width, conf.useMaxWidth);
 
   svg.attr('viewBox', `${svgBounds.x - padding} ${svgBounds.y - padding} ${width} ${height}`);
+  // Graph is ready now to be converted to draw.io format
+  Editor.mermaidToDrawio(g, 'requirements', {requirements, elements});
 };
 
 export default {
