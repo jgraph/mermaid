@@ -10,11 +10,12 @@ async function createServer() {
     configFile: './vite.config.ts',
     mode: 'production',
     server: { middlewareMode: true },
-    appType: 'custom', // don't include Vite's default HTML handling middlewares
+    appType: 'custom', // don't include Vite's default HTML handling middleware
   });
 
   app.use(cors());
   app.use(express.static('./packages/mermaid/dist'));
+  app.use(express.static('./packages/mermaid-zenuml/dist'));
   app.use(express.static('./packages/mermaid-example-diagram/dist'));
   app.use(vite.middlewares);
   app.use(express.static('demos'));

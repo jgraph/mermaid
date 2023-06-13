@@ -1,0 +1,3 @@
+- Merge with main mermaid repository (https://github.com/mermaid-js/mermaid.git) (with the latest release tag)
+- Fix any conflicts ensuring (`format: 'umd'`) is still working
+- Build `npx pnpm install` and test (file in `packages/mermaid/dist/mermaid.min.js`)

@@ -52,6 +52,17 @@ root[A root with a long text that wraps to keep the node size in check]
     );
   });
 
+  it('a root with wrapping text and long words that exceed width', () => {
+    imgSnapshotTest(
+      `mindmap
+root[A few smaller words but then averylongsetofcharacterswithoutwhitespacetoseparate that we expect to wrapontonextlinesandnotexceedwidthparameters]
+    `,
+      {},
+      undefined,
+      shouldHaveRoot
+    );
+  });
+
   it('a root with an icon', () => {
     imgSnapshotTest(
       `mindmap
@@ -222,6 +233,19 @@ mindmap
       undefined,
       shouldHaveRoot
     );
+  });
+  describe('Markdown strings mindmaps (#4220)', () => {
+    it('Formatted label with linebreak and a wrapping label and emojis', () => {
+      imgSnapshotTest(
+        `mindmap
+    id1[\`**Start** with
+    a second line 😎\`]
+      id2[\`The dog in **the** hog... a *very long text* about it
+Word!\`]
+`,
+        { titleTopMargin: 0 }
+      );
+    });
   });
   /* The end */
 });
