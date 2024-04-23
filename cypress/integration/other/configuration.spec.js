@@ -1,4 +1,4 @@
-import { renderGraph } from '../../helpers/util.js';
+import { renderGraph } from '../../helpers/util.ts';
 describe('Configuration', () => {
   describe('arrowMarkerAbsolute', () => {
     it('should handle default value false of arrowMarkerAbsolute', () => {
@@ -117,7 +117,6 @@ describe('Configuration', () => {
     });
     it('should not taint the initial configuration when using multiple directives', () => {
       const url = 'http://localhost:9000/regression/issue-1874.html';
-      cy.viewport(1440, 1024);
       cy.visit(url);
 
       cy.get('svg');

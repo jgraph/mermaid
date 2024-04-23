@@ -1,14 +1,11 @@
 import * as graphlib from 'dagre-d3-es/src/graphlib/index.js';
 import { select, curveLinear, selectAll } from 'd3';
-
-import flowDb from './flowDb.js';
-import { getConfig } from '../../config.js';
+import { getConfig } from '../../diagram-api/diagramAPI.js';
 import utils from '../../utils.js';
-
 import { render } from '../../dagre-wrapper/index.js';
 import { addHtmlLabel } from 'dagre-d3-es/src/dagre-js/label/add-html-label.js';
 import { log } from '../../logger.js';
-import common, { evaluate } from '../common/common.js';
+import common, { evaluate, renderKatex } from '../common/common.js';
 import { interpolateToCurve, getStylesFromArray } from '../../utils.js';
 import { setupGraphViewbox } from '../../setupGraphViewbox.js';
 
@@ -30,12 +27,12 @@ export const setConf = function (cnf) {
  * @param doc
  * @param diagObj
  */
-export const addVertices = function (vert, g, svgId, root, doc, diagObj) {
+export const addVertices = async function (vert, g, svgId, root, doc, diagObj) {
   const svg = root.select(`[id="${svgId}"]`);
   const keys = Object.keys(vert);
 
   // Iterate through each item in the vertex object (containing all the vertices found) in the graph definition
-  keys.forEach(function (id) {
+  for (const id of keys) {
     const vertex = vert[id];
 
     /**
@@ -62,10 +59,7 @@ export const addVertices = function (vert, g, svgId, root, doc, diagObj) {
       if (evaluate(getConfig().flowchart.htmlLabels)) {
         // TODO: addHtmlLabel accepts a labelStyle. Do we possibly have that?
         const node = {
-          label: vertexText.replace(
-            /fa[blrs]?:fa-[\w-]+/g,
-            (s) => `<i class='${s.replace(':', ' ')}'></i>`
-          ),
+          label: vertexText,
         };
         vertexNode = addHtmlLabel(svg, node).node();
         vertexNode.parentNode.removeChild(vertexNode);
@@ -87,12 +81,12 @@ export const addVertices = function (vert, g, svgId, root, doc, diagObj) {
       }
     }
 
-    let radious = 0;
+    let radius = 0;
     let _shape = '';
     // Set the shape based parameters
     switch (vertex.type) {
       case 'round':
-        radious = 5;
+        radius = 5;
         _shape = 'rect';
         break;
       case 'square':
@@ -146,14 +140,16 @@ export const addVertices = function (vert, g, svgId, root, doc, diagObj) {
       default:
         _shape = 'rect';
     }
+    const labelText = await renderKatex(vertexText, getConfig());
+
     // Add the node
     g.setNode(vertex.id, {
       labelStyle: styles.labelStyle,
       shape: _shape,
-      labelText: vertexText,
+      labelText,
       labelType: vertex.labelType,
-      rx: radious,
-      ry: radious,
+      rx: radius,
+      ry: radius,
       class: classStr,
       style: styles.style,
       id: vertex.id,
@@ -173,9 +169,9 @@ export const addVertices = function (vert, g, svgId, root, doc, diagObj) {
       labelStyle: styles.labelStyle,
       labelType: vertex.labelType,
       shape: _shape,
-      labelText: vertexText,
-      rx: radious,
-      ry: radious,
+      labelText,
+      rx: radius,
+      ry: radius,
       class: classStr,
       style: styles.style,
       id: vertex.id,
@@ -186,7 +182,7 @@ export const addVertices = function (vert, g, svgId, root, doc, diagObj) {
       props: vertex.props,
       padding: getConfig().flowchart.padding,
     });
-  });
+  }
 };
 
 /**
@@ -196,7 +192,7 @@ export const addVertices = function (vert, g, svgId, root, doc, diagObj) {
  * @param {object} g The graph object
  * @param diagObj
  */
-export const addEdges = function (edges, g, diagObj) {
+export const addEdges = async function (edges, g, diagObj) {
   log.info('abc78 edges = ', edges);
   let cnt = 0;
   let linkIdCnt = {};
@@ -210,7 +206,7 @@ export const addEdges = function (edges, g, diagObj) {
     defaultLabelStyle = defaultStyles.labelStyle;
   }
 
-  edges.forEach(function (edge) {
+  for (const edge of edges) {
     cnt++;
 
     // Identify Link
@@ -318,9 +314,8 @@ export const addEdges = function (edges, g, diagObj) {
       edgeData.arrowheadStyle = 'fill: #333';
       edgeData.labelpos = 'c';
     }
-
     edgeData.labelType = edge.labelType;
-    edgeData.label = edge.text.replace(common.lineBreakRegex, '\n');
+    edgeData.label = await renderKatex(edge.text.replace(common.lineBreakRegex, '\n'), getConfig());
 
     if (edge.style === undefined) {
       edgeData.style = edgeData.style || 'stroke: #333; stroke-width: 1.5px;fill:none;';
@@ -333,7 +328,7 @@ export const addEdges = function (edges, g, diagObj) {
 
     // Add the edge to the graph
     g.setEdge(edge.start, edge.end, edgeData, cnt);
-  });
+  }
 };
 
 /**
@@ -341,18 +336,10 @@ export const addEdges = function (edges, g, diagObj) {
  *
  * @param text
  * @param diagObj
- * @returns {object} ClassDef styles
+ * @returns {Record<string, import('../../diagram-api/types.js').DiagramStyleClassDef>} ClassDef styles
  */
 export const getClasses = function (text, diagObj) {
-  log.info('Extracting classes');
-  diagObj.db.clear();
-  try {
-    // Parse the graph definition
-    diagObj.parse(text);
-    return diagObj.db.getClasses();
-  } catch (e) {
-    return;
-  }
+  return diagObj.db.getClasses();
 };
 
 /**
@@ -360,14 +347,12 @@ export const getClasses = function (text, diagObj) {
  *
  * @param text
  * @param id
+ * @param _version
+ * @param diagObj
  */
 
 export const draw = async function (text, id, _version, diagObj) {
   log.info('Drawing flowchart');
-  diagObj.db.clear();
-  flowDb.setGen('gen-2');
-  // Parse the graph definition
-  diagObj.parser.parse(text);
 
   // Fetch the default direction, use TD if none was found
   let dir = diagObj.db.getDirection();
@@ -440,8 +425,8 @@ export const draw = async function (text, id, _version, diagObj) {
       g.setParent(subG.nodes[j], subG.id);
     }
   }
-  addVertices(vert, g, id, root, doc, diagObj);
-  addEdges(edges, g, diagObj);
+  await addVertices(vert, g, id, root, doc, diagObj);
+  await addEdges(edges, g, diagObj);
 
   // Add custom shapes
   // flowChartShapes.addToRenderV2(addShape);

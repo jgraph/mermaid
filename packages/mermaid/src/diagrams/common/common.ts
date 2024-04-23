@@ -1,6 +1,7 @@
 import DOMPurify from 'dompurify';
-import { MermaidConfig } from '../../config.type.js';
+import type { MermaidConfig } from '../../config.type.js';
 
+// Remove and ignore br:s
 export const lineBreakRegex = /<br\s*\/?>/gi;
 
 /**
@@ -17,6 +18,37 @@ export const getRows = (s?: string): string[] => {
   return str.split('#br#');
 };
 
+const setupDompurifyHooksIfNotSetup = (() => {
+  let setup = false;
+
+  return () => {
+    if (!setup) {
+      setupDompurifyHooks();
+      setup = true;
+    }
+  };
+})();
+
+function setupDompurifyHooks() {
+  const TEMPORARY_ATTRIBUTE = 'data-temp-href-target';
+
+  DOMPurify.addHook('beforeSanitizeAttributes', (node: Element) => {
+    if (node.tagName === 'A' && node.hasAttribute('target')) {
+      node.setAttribute(TEMPORARY_ATTRIBUTE, node.getAttribute('target') || '');
+    }
+  });
+
+  DOMPurify.addHook('afterSanitizeAttributes', (node: Element) => {
+    if (node.tagName === 'A' && node.hasAttribute(TEMPORARY_ATTRIBUTE)) {
+      node.setAttribute('target', node.getAttribute(TEMPORARY_ATTRIBUTE) || '');
+      node.removeAttribute(TEMPORARY_ATTRIBUTE);
+      if (node.getAttribute('target') === '_blank') {
+        node.setAttribute('rel', 'noopener');
+      }
+    }
+  });
+}
+
 /**
  * Removes script tags from a text
  *
@@ -24,7 +56,11 @@ export const getRows = (s?: string): string[] => {
  * @returns The safer text
  */
 export const removeScript = (txt: string): string => {
-  return DOMPurify.sanitize(txt);
+  setupDompurifyHooksIfNotSetup();
+
+  const sanitizedText = DOMPurify.sanitize(txt);
+
+  return sanitizedText;
 };
 
 const sanitizeMore = (text: string, config: MermaidConfig) => {
@@ -177,23 +213,157 @@ export const getMin = function (...values: number[]): number {
  * @param text - The text to convert
  * @returns The converted string
  */
-export const parseGenericTypes = function (text: string): string {
-  let cleanedText = text;
+export const parseGenericTypes = function (input: string): string {
+  const inputSets = input.split(/(,)/);
+  const output = [];
 
-  if (text.split('~').length - 1 >= 2) {
-    let newCleanedText = cleanedText;
+  for (let i = 0; i < inputSets.length; i++) {
+    let thisSet = inputSets[i];
 
-    // use a do...while loop instead of replaceAll to detect recursion
-    // e.g. Array~Array~T~~
-    do {
-      cleanedText = newCleanedText;
-      newCleanedText = cleanedText.replace(/~([^\s,:;]+)~/, '<$1>');
-    } while (newCleanedText != cleanedText);
+    // if the original input included a value such as "~K, V~"", these will be split into
+    // an array of ["~K",","," V~"].
+    // This means that on each call of processSet, there will only be 1 ~ present
+    // To account for this, if we encounter a ",", we are checking the previous and next sets in the array
+    // to see if they contain matching ~'s
+    // in which case we are assuming that they should be rejoined and sent to be processed
+    if (thisSet === ',' && i > 0 && i + 1 < inputSets.length) {
+      const previousSet = inputSets[i - 1];
+      const nextSet = inputSets[i + 1];
 
-    return parseGenericTypes(newCleanedText);
-  } else {
-    return cleanedText;
+      if (shouldCombineSets(previousSet, nextSet)) {
+        thisSet = previousSet + ',' + nextSet;
+        i++; // Move the index forward to skip the next iteration since we're combining sets
+        output.pop();
+      }
+    }
+
+    output.push(processSet(thisSet));
   }
+
+  return output.join('');
+};
+
+export const countOccurrence = (string: string, substring: string): number => {
+  return Math.max(0, string.split(substring).length - 1);
+};
+
+const shouldCombineSets = (previousSet: string, nextSet: string): boolean => {
+  const prevCount = countOccurrence(previousSet, '~');
+  const nextCount = countOccurrence(nextSet, '~');
+
+  return prevCount === 1 && nextCount === 1;
+};
+
+const processSet = (input: string): string => {
+  const tildeCount = countOccurrence(input, '~');
+  let hasStartingTilde = false;
+
+  if (tildeCount <= 1) {
+    return input;
+  }
+
+  // If there is an odd number of tildes, and the input starts with a tilde, we need to remove it and add it back in later
+  if (tildeCount % 2 !== 0 && input.startsWith('~')) {
+    input = input.substring(1);
+    hasStartingTilde = true;
+  }
+
+  const chars = [...input];
+
+  let first = chars.indexOf('~');
+  let last = chars.lastIndexOf('~');
+
+  while (first !== -1 && last !== -1 && first !== last) {
+    chars[first] = '<';
+    chars[last] = '>';
+
+    first = chars.indexOf('~');
+    last = chars.lastIndexOf('~');
+  }
+
+  // Add the starting tilde back in if we removed it
+  if (hasStartingTilde) {
+    chars.unshift('~');
+  }
+
+  return chars.join('');
+};
+
+// TODO: find a better method for detecting support. This interface was added in the MathML 4 spec.
+// Firefox versions between [4,71] (0.47%) and Safari versions between [5,13.4] (0.17%) don't have this interface implemented but MathML is supported
+export const isMathMLSupported = () => window.MathMLElement !== undefined;
+
+export const katexRegex = /\$\$(.*)\$\$/g;
+
+/**
+ * Whether or not a text has KaTeX delimiters
+ *
+ * @param text - The text to test
+ * @returns Whether or not the text has KaTeX delimiters
+ */
+export const hasKatex = (text: string): boolean => (text.match(katexRegex)?.length ?? 0) > 0;
+
+/**
+ * Computes the minimum dimensions needed to display a div containing MathML
+ *
+ * @param text - The text to test
+ * @param config - Configuration for Mermaid
+ * @returns Object containing \{width, height\}
+ */
+export const calculateMathMLDimensions = async (text: string, config: MermaidConfig) => {
+  text = await renderKatex(text, config);
+  const divElem = document.createElement('div');
+  divElem.innerHTML = text;
+  divElem.id = 'katex-temp';
+  divElem.style.visibility = 'hidden';
+  divElem.style.position = 'absolute';
+  divElem.style.top = '0';
+  const body = document.querySelector('body');
+  body?.insertAdjacentElement('beforeend', divElem);
+  const dim = { width: divElem.clientWidth, height: divElem.clientHeight };
+  divElem.remove();
+  return dim;
+};
+
+/**
+ * Attempts to render and return the KaTeX portion of a string with MathML
+ *
+ * @param text - The text to test
+ * @param config - Configuration for Mermaid
+ * @returns String containing MathML if KaTeX is supported, or an error message if it is not and stylesheets aren't present
+ */
+export const renderKatex = async (text: string, config: MermaidConfig): Promise<string> => {
+  if (!hasKatex(text)) {
+    return text;
+  }
+
+  if (!isMathMLSupported() && !config.legacyMathML) {
+    return text.replace(katexRegex, 'MathML is unsupported in this environment.');
+  }
+
+  const { default: katex } = await import('katex');
+  return text
+    .split(lineBreakRegex)
+    .map((line) =>
+      hasKatex(line)
+        ? `
+            <div style="display: flex; align-items: center; justify-content: center; white-space: nowrap;">
+              ${line}
+            </div>
+          `
+        : `<div>${line}</div>`
+    )
+    .join('')
+    .replace(katexRegex, (_, c) =>
+      katex
+        .renderToString(c, {
+          throwOnError: true,
+          displayMode: true,
+          output: isMathMLSupported() ? 'mathml' : 'htmlAndMathml',
+        })
+        .replace(/\n/g, ' ')
+        .replace(/<annotation.*<\/annotation>/g, '')
+    );
 };
 
 export default {

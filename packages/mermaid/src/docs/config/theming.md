@@ -47,7 +47,7 @@ Example of `init` directive setting the `theme` to `forest`:
     a --> b
 ```
 
-> **Reminder**: the only theme that can be customed is the `base` theme. The following section covers how to use `themeVariables` for customizations.
+> **Reminder**: the only theme that can be customized is the `base` theme. The following section covers how to use `themeVariables` for customizations.
 
 ## Customizing Themes with `themeVariables`
 
@@ -55,9 +55,9 @@ To make a custom theme, modify `themeVariables` via `init`.
 
 You will need to use the [base](#available-themes) theme as it is the only modifiable theme.
 
-| Parameter      | Description                          | Type   | Properties                                                                                          |
-| -------------- | ------------------------------------ | ------ | --------------------------------------------------------------------------------------------------- |
-| themeVariables | Modifiable with the `init` directive | Object | `primaryColor`, `primaryTextColor`, `lineColor` ([see full list](#theme-variables-reference-table)) |
+| Parameter      | Description                          | Type   | Properties                                                                          |
+| -------------- | ------------------------------------ | ------ | ----------------------------------------------------------------------------------- |
+| themeVariables | Modifiable with the `init` directive | Object | `primaryColor`, `primaryTextColor`, `lineColor` ([see full list](#theme-variables)) |
 
 Example of modifying `themeVariables` using the `init` directive:
 

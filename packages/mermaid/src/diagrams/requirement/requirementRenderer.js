@@ -5,7 +5,7 @@ import { log } from '../../logger.js';
 import { configureSvgSize } from '../../setupGraphViewbox.js';
 import common from '../common/common.js';
 import markers from './requirementMarkers.js';
-import { getConfig } from '../../config.js';
+import { getConfig } from '../../diagram-api/diagramAPI.js';
 
 let conf = {};
 let relCnt = 0;
@@ -306,8 +306,6 @@ const elementString = (str) => {
 
 export const draw = (text, id, _version, diagObj) => {
   conf = getConfig().requirement;
-  diagObj.db.clear();
-  diagObj.parser.parse(text);
 
   const securityLevel = conf.securityLevel;
   // Handle root and Document for when rendering in sandbox mode
@@ -365,6 +363,8 @@ export const draw = (text, id, _version, diagObj) => {
   // Graph is ready now to be converted to draw.io format
   Editor.mermaidToDrawio(g, 'requirements', {requirements, elements});
 };
+
+// cspell:ignore txts
 
 export default {
   draw,

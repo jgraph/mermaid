@@ -34,12 +34,10 @@ vi.mock('./diagrams/state/stateRenderer-v2.js');
 // -------------------------------------
 
 import mermaid from './mermaid.js';
-import { MermaidConfig } from './config.type.js';
+import type { MermaidConfig } from './config.type.js';
 
 import mermaidAPI, { removeExistingElements } from './mermaidAPI.js';
 import {
-  encodeEntities,
-  decodeEntities,
   createCssStyles,
   createUserStyles,
   appendDivSvgG,
@@ -68,6 +66,8 @@ vi.mock('stylis', () => {
   };
 });
 import { compile, serialize } from 'stylis';
+import { decodeEntities, encodeEntities } from './utils.js';
+import { Diagram } from './Diagram.js';
 
 /**
  * @see https://vitest.dev/guide/mocking.html Mock part of a module
@@ -163,6 +163,7 @@ describe('mermaidAPI', () => {
     });
 
     it('decodesEntities', () => {
+      // cspell:ignore brrrr
       const result = cleanUpSvgCode('¶ß brrrr', true, true);
       expect(result).toEqual('; brrrr');
     });
@@ -232,6 +233,8 @@ describe('mermaidAPI', () => {
     // @ts-ignore @todo TODO why is this getting a type error?
     const svg_attr_spy = vi.spyOn(fauxSvgNode, 'attr').mockReturnValue(fauxSvgNode);
 
+    // cspell:ignore dthe
+
     it('appends a div node', () => {
       appendDivSvgG(fauxParentNode, 'theId', 'dtheId');
       expect(parent_append_spy).toHaveBeenCalledWith('div');
@@ -287,15 +290,15 @@ describe('mermaidAPI', () => {
     };
 
     it('gets the cssStyles from the theme', () => {
-      const styles = createCssStyles(mocked_config_with_htmlLabels, 'graphType', null);
+      const styles = createCssStyles(mocked_config_with_htmlLabels, null);
       expect(styles).toMatch(/^\ndefault(.*)/);
     });
     it('gets the fontFamily from the config', () => {
-      const styles = createCssStyles(mocked_config_with_htmlLabels, 'graphType', {});
+      const styles = createCssStyles(mocked_config_with_htmlLabels, {});
       expect(styles).toMatch(/(.*)\n:root { --mermaid-font-family: serif(.*)/);
     });
     it('gets the alt fontFamily from the config', () => {
-      const styles = createCssStyles(mocked_config_with_htmlLabels, 'graphType', undefined);
+      const styles = createCssStyles(mocked_config_with_htmlLabels, undefined);
       expect(styles).toMatch(/(.*)\n:root { --mermaid-alt-font-family: sans-serif(.*)/);
     });
 
@@ -306,8 +309,6 @@ describe('mermaidAPI', () => {
       const classDefs = { classDef1, classDef2, classDef3 };
 
       describe('the graph supports classDefs', () => {
-        const graphType = 'flowchart-v2';
-
         const REGEXP_SPECIALS = ['^', '$', '?', '(', '{', '[', '.', '*', '!'];
 
         // prefix any special RegExp characters in the given string with a \ so we can use the literal character in a RegExp
@@ -373,7 +374,7 @@ describe('mermaidAPI', () => {
               // @todo TODO Can't figure out how to spy on the cssImportantStyles method.
               //   That would be a much better approach than manually checking the result
 
-              const styles = createCssStyles(mocked_config, graphType, classDefs);
+              const styles = createCssStyles(mocked_config, classDefs);
               htmlElements.forEach((htmlElement) => {
                 expect_styles_matchesHtmlElements(styles, htmlElement);
               });
@@ -411,7 +412,7 @@ describe('mermaidAPI', () => {
             it('creates CSS styles for every style and textStyle in every classDef', () => {
               // TODO Can't figure out how to spy on the cssImportantStyles method. That would be a much better approach than manually checking the result.
 
-              const styles = createCssStyles(mocked_config_no_htmlLabels, graphType, classDefs);
+              const styles = createCssStyles(mocked_config_no_htmlLabels, classDefs);
               htmlElements.forEach((htmlElement) => {
                 expect_styles_matchesHtmlElements(styles, htmlElement);
               });
@@ -733,7 +734,7 @@ describe('mermaidAPI', () => {
           const diagramText = `${diagramType}\n accTitle: ${a11yTitle}\n accDescr: ${a11yDescr}\n`;
           const expectedDiagramType = testedDiagram.expectedType;
 
-          it('aria-roledscription is set to the diagram type, addSVGa11yTitleDescription is called', async () => {
+          it('should set aria-roledescription to the diagram type AND should call addSVGa11yTitleDescription', async () => {
             const a11yDiagramInfo_spy = vi.spyOn(accessibility, 'setA11yDiagramInfo');
             const a11yTitleDesc_spy = vi.spyOn(accessibility, 'addSVGa11yTitleDescription');
             await mermaidAPI.render(id, diagramText);
@@ -748,55 +749,15 @@ describe('mermaidAPI', () => {
     });
   });
 
-  describe('render', () => {
-    // Be sure to add async before each test (anonymous) method
-
-    // These are more like integration tests right now because nothing is mocked.
-    // But it is faster that a cypress test and there's no real reason to actually evaluate an image pixel by pixel.
-
-    // render(id, text, cb?, svgContainingElement?)
-
-    // Test all diagram types.  Note that old flowchart 'graph' type will invoke the flowRenderer-v2. (See the flowchart v2 detector.)
-    // We have to have both the specific textDiagramType and the expected type name because the expected type may be slightly different than was is put in the diagram text (ex: in -v2 diagrams)
-    const diagramTypesAndExpectations = [
-      { textDiagramType: 'C4Context', expectedType: 'c4' },
-      { textDiagramType: 'classDiagram', expectedType: 'classDiagram' },
-      { textDiagramType: 'classDiagram-v2', expectedType: 'classDiagram' },
-      { textDiagramType: 'erDiagram', expectedType: 'er' },
-      { textDiagramType: 'graph', expectedType: 'flowchart-v2' },
-      { textDiagramType: 'flowchart', expectedType: 'flowchart-v2' },
-      { textDiagramType: 'gitGraph', expectedType: 'gitGraph' },
-      { textDiagramType: 'gantt', expectedType: 'gantt' },
-      { textDiagramType: 'journey', expectedType: 'journey' },
-      { textDiagramType: 'pie', expectedType: 'pie' },
-      { textDiagramType: 'requirementDiagram', expectedType: 'requirement' },
-      { textDiagramType: 'sequenceDiagram', expectedType: 'sequence' },
-      { textDiagramType: 'stateDiagram-v2', expectedType: 'stateDiagram' },
-    ];
-
-    describe('accessibility', () => {
-      const id = 'mermaid-fauxId';
-      const a11yTitle = 'a11y title';
-      const a11yDescr = 'a11y description';
-
-      diagramTypesAndExpectations.forEach((testedDiagram) => {
-        describe(`${testedDiagram.textDiagramType}`, () => {
-          const diagramType = testedDiagram.textDiagramType;
-          const diagramText = `${diagramType}\n accTitle: ${a11yTitle}\n accDescr: ${a11yDescr}\n`;
-          const expectedDiagramType = testedDiagram.expectedType;
-
-          it('aria-roledscription is set to the diagram type, addSVGa11yTitleDescription is called', async () => {
-            const a11yDiagramInfo_spy = vi.spyOn(accessibility, 'setA11yDiagramInfo');
-            const a11yTitleDesc_spy = vi.spyOn(accessibility, 'addSVGa11yTitleDescription');
-            await mermaidAPI.render(id, diagramText);
-            expect(a11yDiagramInfo_spy).toHaveBeenCalledWith(
-              expect.anything(),
-              expectedDiagramType
-            );
-            expect(a11yTitleDesc_spy).toHaveBeenCalled();
-          });
-        });
-      });
+  describe('getDiagramFromText', () => {
+    it('should clean up comments when present in diagram definition', async () => {
+      const diagram = await mermaidAPI.getDiagramFromText(
+        `flowchart LR
+      %% This is a comment A -- text --> B{node}
+      A -- text --> B -- text2 --> C`
+      );
+      expect(diagram).toBeInstanceOf(Diagram);
+      expect(diagram.type).toBe('flowchart-v2');
     });
   });
 });

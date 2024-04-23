@@ -10,18 +10,40 @@ import {
   axisBottom,
   axisTop,
   timeFormat,
+  timeMillisecond,
+  timeSecond,
   timeMinute,
   timeHour,
   timeDay,
-  timeWeek,
+  timeMonday,
+  timeTuesday,
+  timeWednesday,
+  timeThursday,
+  timeFriday,
+  timeSaturday,
+  timeSunday,
   timeMonth,
 } from 'd3';
 import common from '../common/common.js';
-import { getConfig } from '../../config.js';
+import { getConfig } from '../../diagram-api/diagramAPI.js';
 import { configureSvgSize } from '../../setupGraphViewbox.js';
 
 export const setConf = function () {
   log.debug('Something is calling, setConf, remove the call');
+};
+
+/**
+ * This will map any day of the week that can be set in the `weekday` option to
+ * the corresponding d3-time function that is used to calculate the ticks.
+ */
+const mapWeekdayToTimeFunction = {
+  monday: timeMonday,
+  tuesday: timeTuesday,
+  wednesday: timeWednesday,
+  thursday: timeThursday,
+  friday: timeFriday,
+  saturday: timeSaturday,
+  sunday: timeSunday,
 };
 
 /**
@@ -59,8 +81,6 @@ let w;
 export const draw = function (text, id, version, diagObj) {
   const conf = getConfig().gantt;
 
-  // diagObj.db.clear();
-  // parser.parse(text);
   const securityLevel = getConfig().securityLevel;
   // Handle root and Document for when rendering in sandbox mode
   let sandboxElement;
@@ -158,7 +178,7 @@ export const draw = function (text, id, version, diagObj) {
   // tasks are created based on their order of startTime
   taskArray.sort(taskCompare);
 
-  makeGant(taskArray, w, h);
+  makeGantt(taskArray, w, h);
 
   configureSvgSize(svg, h, w, conf.useMaxWidth);
 
@@ -174,7 +194,7 @@ export const draw = function (text, id, version, diagObj) {
    * @param pageWidth
    * @param pageHeight
    */
-  function makeGant(tasks, pageWidth, pageHeight) {
+  function makeGantt(tasks, pageWidth, pageHeight) {
     const barHeight = conf.barHeight;
     const gap = barHeight + conf.barGap;
     const topPadding = conf.topPadding;
@@ -477,20 +497,37 @@ export const draw = function (text, id, version, diagObj) {
    * @param w
    * @param h
    * @param tasks
-   * @param excludes
-   * @param includes
+   * @param {unknown[]} excludes
+   * @param {unknown[]} includes
    */
   function drawExcludeDays(theGap, theTopPad, theSidePad, w, h, tasks, excludes, includes) {
-    const minTime = tasks.reduce(
-      (min, { startTime }) => (min ? Math.min(min, startTime) : startTime),
-      0
-    );
-    const maxTime = tasks.reduce((max, { endTime }) => (max ? Math.max(max, endTime) : endTime), 0);
-    const dateFormat = diagObj.db.getDateFormat();
+    if (excludes.length === 0 && includes.length === 0) {
+      return;
+    }
+
+    let minTime;
+    let maxTime;
+    for (const { startTime, endTime } of tasks) {
+      if (minTime === undefined || startTime < minTime) {
+        minTime = startTime;
+      }
+      if (maxTime === undefined || endTime > maxTime) {
+        maxTime = endTime;
+      }
+    }
+
     if (!minTime || !maxTime) {
       return;
     }
 
+    if (dayjs(maxTime).diff(dayjs(minTime), 'year') > 5) {
+      log.warn(
+        'The difference between the min and max time is more than 5 years. This will cause performance issues. Skipping drawing exclude days.'
+      );
+      return;
+    }
+
+    const dateFormat = diagObj.db.getDateFormat();
     const excludeRanges = [];
     let range = null;
     let d = dayjs(minTime);
@@ -555,7 +592,7 @@ export const draw = function (text, id, version, diagObj) {
       .tickSize(-h + theTopPad + conf.gridLineStartPadding)
       .tickFormat(timeFormat(diagObj.db.getAxisFormat() || conf.axisFormat || '%Y-%m-%d'));
 
-    const reTickInterval = /^([1-9]\d*)(minute|hour|day|week|month)$/;
+    const reTickInterval = /^([1-9]\d*)(millisecond|second|minute|hour|day|week|month)$/;
     const resultTickInterval = reTickInterval.exec(
       diagObj.db.getTickInterval() || conf.tickInterval
     );
@@ -563,7 +600,15 @@ export const draw = function (text, id, version, diagObj) {
     if (resultTickInterval !== null) {
       const every = resultTickInterval[1];
       const interval = resultTickInterval[2];
+      const weekday = diagObj.db.getWeekday() || conf.weekday;
+
       switch (interval) {
+        case 'millisecond':
+          bottomXAxis.ticks(timeMillisecond.every(every));
+          break;
+        case 'second':
+          bottomXAxis.ticks(timeSecond.every(every));
+          break;
         case 'minute':
           bottomXAxis.ticks(timeMinute.every(every));
           break;
@@ -574,7 +619,7 @@ export const draw = function (text, id, version, diagObj) {
           bottomXAxis.ticks(timeDay.every(every));
           break;
         case 'week':
-          bottomXAxis.ticks(timeWeek.every(every));
+          bottomXAxis.ticks(mapWeekdayToTimeFunction[weekday].every(every));
           break;
         case 'month':
           bottomXAxis.ticks(timeMonth.every(every));
@@ -602,7 +647,15 @@ export const draw = function (text, id, version, diagObj) {
       if (resultTickInterval !== null) {
         const every = resultTickInterval[1];
         const interval = resultTickInterval[2];
+        const weekday = diagObj.db.getWeekday() || conf.weekday;
+
         switch (interval) {
+          case 'millisecond':
+            topXAxis.ticks(timeMillisecond.every(every));
+            break;
+          case 'second':
+            topXAxis.ticks(timeSecond.every(every));
+            break;
           case 'minute':
             topXAxis.ticks(timeMinute.every(every));
             break;
@@ -613,7 +666,7 @@ export const draw = function (text, id, version, diagObj) {
             topXAxis.ticks(timeDay.every(every));
             break;
           case 'week':
-            topXAxis.ticks(timeWeek.every(every));
+            topXAxis.ticks(mapWeekdayToTimeFunction[weekday].every(every));
             break;
           case 'month':
             topXAxis.ticks(timeMonth.every(every));
@@ -642,12 +695,12 @@ export const draw = function (text, id, version, diagObj) {
   function vertLabels(theGap, theTopPad) {
     let prevGap = 0;
 
-    const numOccurances = Object.keys(categoryHeights).map((d) => [d, categoryHeights[d]]);
+    const numOccurrences = Object.keys(categoryHeights).map((d) => [d, categoryHeights[d]]);
 
     svg
       .append('g') // without doing this, impossible to put grid lines behind text
       .selectAll('text')
-      .data(numOccurances)
+      .data(numOccurrences)
       .enter()
       .append(function (d) {
         const rows = d[0].split(common.lineBreakRegex);
@@ -672,7 +725,7 @@ export const draw = function (text, id, version, diagObj) {
       .attr('y', function (d, i) {
         if (i > 0) {
           for (let j = 0; j < i; j++) {
-            prevGap += numOccurances[i - 1][1];
+            prevGap += numOccurrences[i - 1][1];
             return (d[1] * theGap) / 2 + prevGap * theGap + theTopPad;
           }
         } else {

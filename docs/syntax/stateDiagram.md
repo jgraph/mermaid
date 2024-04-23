@@ -487,7 +487,7 @@ where
 - the second _property_ is `color` and its _value_ is `white`
 - the third _property_ is `font-weight` and its _value_ is `bold`
 - the fourth _property_ is `stroke-width` and its _value_ is `2px`
-- the fifth _property_ is `stroke` and its _value_ is `yello`
+- the fifth _property_ is `stroke` and its _value_ is `yellow`
 
 ### Apply classDef styles to states
 
@@ -622,7 +622,7 @@ Spaces can be added to a state by first defining the state with an id and then r
 
 In the following example there is a state with the id **yswsii** and description **Your state with spaces in it**.
 After it has been defined, **yswsii** is used in the diagram in the first transition (`[*] --> yswsii`)
-and also in the transition to **YetAnotherState** (`yswsii --> YetAnotherState`).\
+and also in the transition to **YetAnotherState** (`yswsii --> YetAnotherState`).
 (**yswsii** has been styled so that it is different from the other states.)
 
 ```mermaid-example
@@ -648,3 +648,5 @@ stateDiagram
     yswsii --> YetAnotherState
     YetAnotherState --> [*]
 ```
+
+<!--- cspell:ignore yswsii --->

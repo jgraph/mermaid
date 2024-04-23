@@ -1,6 +1,5 @@
 import { vi } from 'vitest';
-
-import * as configApi from '../../config.js';
+import { setSiteConfig } from '../../diagram-api/diagramAPI.js';
 import mermaidAPI from '../../mermaidAPI.js';
 import { Diagram, getDiagramFromText } from '../../Diagram.js';
 import { addDiagrams } from '../../diagram-api/diagram-orchestration.js';
@@ -104,6 +103,7 @@ describe('more than one sequence diagram', () => {
     expect(diagram1.db.getMessages()).toMatchInlineSnapshot(`
       [
         {
+          "activate": false,
           "from": "Alice",
           "message": "Hello Bob, how are you?",
           "to": "Bob",
@@ -111,6 +111,7 @@ describe('more than one sequence diagram', () => {
           "wrap": false,
         },
         {
+          "activate": false,
           "from": "Bob",
           "message": "I am good thanks!",
           "to": "Alice",
@@ -127,6 +128,7 @@ describe('more than one sequence diagram', () => {
     expect(diagram2.db.getMessages()).toMatchInlineSnapshot(`
       [
         {
+          "activate": false,
           "from": "Alice",
           "message": "Hello Bob, how are you?",
           "to": "Bob",
@@ -134,6 +136,7 @@ describe('more than one sequence diagram', () => {
           "wrap": false,
         },
         {
+          "activate": false,
           "from": "Bob",
           "message": "I am good thanks!",
           "to": "Alice",
@@ -152,6 +155,7 @@ describe('more than one sequence diagram', () => {
     expect(diagram3.db.getMessages()).toMatchInlineSnapshot(`
       [
         {
+          "activate": false,
           "from": "Alice",
           "message": "Hello John, how are you?",
           "to": "John",
@@ -159,6 +163,7 @@ describe('more than one sequence diagram', () => {
           "wrap": false,
         },
         {
+          "activate": false,
           "from": "John",
           "message": "I am good thanks!",
           "to": "Alice",
@@ -172,14 +177,11 @@ describe('more than one sequence diagram', () => {
 
 describe('when parsing a sequenceDiagram', function () {
   beforeEach(function () {
-    // diagram.db = sequenceDb;
-    // diagram.db.clear();
     diagram = new Diagram(`
 sequenceDiagram
 Alice->Bob:Hello Bob, how are you?
 Note right of Bob: Bob thinks
 Bob-->Alice: I am good thanks!`);
-    diagram.db.clear();
   });
   it('should handle a sequenceDiagram definition', async function () {
     const str = `
@@ -207,7 +209,7 @@ Note right of Bob: Bob thinks
 Bob-->Alice: I am good thanks!`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram); // needs to be rendered for the correct value of visibility auto numbers
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram); // needs to be rendered for the correct value of visibility auto numbers
     expect(diagram.db.showSequenceNumbers()).toBe(false);
   });
   it('should show sequence numbers when autonumber is enabled', async () => {
@@ -219,9 +221,10 @@ Note right of Bob: Bob thinks
 Bob-->Alice: I am good thanks!`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram); // needs to be rendered for the correct value of visibility auto numbers
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram); // needs to be rendered for the correct value of visibility auto numbers
     expect(diagram.db.showSequenceNumbers()).toBe(true);
   });
+
   it('should handle a sequenceDiagram definition with a title:', async () => {
     const str = `
 sequenceDiagram
@@ -551,6 +554,7 @@ deactivate Bob`;
 
     expect(messages.length).toBe(4);
     expect(messages[0].type).toBe(diagram.db.LINETYPE.DOTTED);
+    expect(messages[0].activate).toBeTruthy();
     expect(messages[1].type).toBe(diagram.db.LINETYPE.ACTIVE_START);
     expect(messages[1].from.actor).toBe('Bob');
     expect(messages[2].type).toBe(diagram.db.LINETYPE.DOTTED);
@@ -1404,6 +1408,62 @@ link a: Tests @ https://tests.contoso.com/?svc=alice@contoso.com
     expect(boxes[0].actorKeys).toEqual(['a', 'b']);
     expect(boxes[0].fill).toEqual('Aqua');
   });
+
+  it('should handle simple actor creation', async () => {
+    const str = `
+  sequenceDiagram
+  participant a as Alice
+  a ->>b: Hello Bob?
+  create participant c
+  b-->>c: Hello c!
+  c ->> b: Hello b?
+  create actor d as Donald
+  a ->> d: Hello Donald?
+  `;
+    await mermaidAPI.parse(str);
+    const actors = diagram.db.getActors();
+    const createdActors = diagram.db.getCreatedActors();
+    expect(actors['c'].name).toEqual('c');
+    expect(actors['c'].description).toEqual('c');
+    expect(actors['c'].type).toEqual('participant');
+    expect(createdActors['c']).toEqual(1);
+    expect(actors['d'].name).toEqual('d');
+    expect(actors['d'].description).toEqual('Donald');
+    expect(actors['d'].type).toEqual('actor');
+    expect(createdActors['d']).toEqual(3);
+  });
+  it('should handle simple actor destruction', async () => {
+    const str = `
+  sequenceDiagram
+  participant a as Alice
+  a ->>b: Hello Bob?
+  destroy a
+  b-->>a: Hello Alice!
+  b ->> c: Where is Alice?
+  destroy c
+  b ->> c: Where are you?
+  `;
+    await mermaidAPI.parse(str);
+    const destroyedActors = diagram.db.getDestroyedActors();
+    expect(destroyedActors['a']).toEqual(1);
+    expect(destroyedActors['c']).toEqual(3);
+  });
+  it('should handle the creation and destruction of the same actor', async () => {
+    const str = `
+  sequenceDiagram
+  a ->>b: Hello Bob?
+  create participant c
+  b ->>c: Hello c!
+  c ->> b: Hello b?
+  destroy c
+  b ->> c : Bye c !
+  `;
+    await mermaidAPI.parse(str);
+    const createdActors = diagram.db.getCreatedActors();
+    const destroyedActors = diagram.db.getDestroyedActors();
+    expect(createdActors['c']).toEqual(1);
+    expect(destroyedActors['c']).toEqual(3);
+  });
 });
 describe('when checking the bounds in a sequenceDiagram', function () {
   beforeAll(() => {
@@ -1426,8 +1486,6 @@ describe('when checking the bounds in a sequenceDiagram', function () {
   let conf;
   beforeEach(function () {
     mermaidAPI.reset();
-    // diagram.db = sequenceDb;
-    // diagram.db.clear();
     diagram.renderer.bounds.init();
     conf = diagram.db.getConfig();
   });
@@ -1552,7 +1610,7 @@ describe('when rendering a sequenceDiagram APA', function () {
       wrap: false,
       mirrorActors: false,
     };
-    configApi.setSiteConfig({ logLevel: 5, sequence: conf });
+    setSiteConfig({ logLevel: 5, sequence: conf });
   });
   let conf;
   beforeEach(function () {
@@ -1573,13 +1631,12 @@ describe('when rendering a sequenceDiagram APA', function () {
       wrap: false,
       mirrorActors: false,
     };
-    configApi.setSiteConfig({ logLevel: 5, sequence: conf });
+    setSiteConfig({ logLevel: 5, sequence: conf });
     diagram = new Diagram(`
 sequenceDiagram
 Alice->Bob:Hello Bob, how are you?
 Note right of Bob: Bob thinks
 Bob-->Alice: I am good thanks!`);
-    diagram.db.clear();
   });
   ['tspan', 'fo', 'old', undefined].forEach(function (textPlacement) {
     it(`
@@ -1591,7 +1648,7 @@ participant Alice`;
       // mermaidAPI.reinitialize({ sequence: { textPlacement: textPlacement } });
       await mermaidAPI.parse(str);
       // diagram.renderer.setConf(mermaidAPI.getConfig().sequence);
-      diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+      await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
       const { bounds } = diagram.renderer.bounds.getBounds();
       expect(bounds.startx).toBe(0);
@@ -1622,7 +1679,7 @@ Note over Alice: Alice thinks
 
     expect(mermaidAPI.getConfig().sequence.mirrorActors).toBeFalsy();
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(0);
@@ -1638,7 +1695,7 @@ participant Alice
 Note left of Alice: Alice thinks`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(-(conf.width / 2) - conf.actorMargin / 2);
@@ -1654,7 +1711,7 @@ participant Alice
 Note right of Alice: Alice thinks`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(0);
@@ -1669,7 +1726,7 @@ sequenceDiagram
 Alice->Bob: Hello Bob, how are you?`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(0);
@@ -1687,7 +1744,7 @@ end
 Alice->Bob: Hello Bob, how are you?`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(0);
@@ -1702,7 +1759,7 @@ sequenceDiagram
 Alice->Bob: Hello Bob, how are you?`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     const mermaid = mermaidAPI.getConfig();
@@ -1722,7 +1779,7 @@ wrap
 Alice->Bob: Hello Bob, how are you?`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const msgs = diagram.db.getMessages();
     const { bounds, models } = diagram.renderer.bounds.getBounds();
@@ -1743,7 +1800,7 @@ Note over Bob,Alice: Looks back
 `;
     // mermaidAPI.initialize({logLevel:0})
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(0);
@@ -1758,7 +1815,7 @@ Alice->Bob: Hello Bob, how are you?
 Bob->Alice: Fine!`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(0);
@@ -1774,7 +1831,7 @@ Note right of Bob: Bob thinks
 Bob->Alice: Fine!`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(0);
@@ -1793,7 +1850,7 @@ Note left of Alice: Bob thinks
 Bob->Alice: Fine!`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(-(conf.width / 2) - conf.actorMargin / 2);
@@ -1810,7 +1867,7 @@ Note left of Alice: Bob thinks
 Bob->>Alice: Fine!`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     const msgs = diagram.db.getMessages();
@@ -1831,7 +1888,7 @@ Note left of Alice: Bob thinks
 Bob->>Alice: Fine!`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     const msgs = diagram.db.getMessages();
@@ -1854,7 +1911,7 @@ Note left of Alice: Bob thinks
 Bob->>Alice: Fine!`;
 
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     const msgs = diagram.db.getMessages();
@@ -1876,7 +1933,7 @@ Note left of Alice: Bob thinks
 Bob->>Alice: Fine!`;
     // mermaidAPI.initialize({ logLevel: 0 });
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     const msgs = diagram.db.getMessages();
@@ -1900,7 +1957,7 @@ loop Cheers
 Bob->Alice: Fine!
 end`;
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(0);
@@ -1918,7 +1975,7 @@ end`;
         end
     `;
     await mermaidAPI.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+    await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
     const { bounds, models } = diagram.renderer.bounds.getBounds();
     expect(bounds.startx).toBe(0);
     expect(bounds.starty).toBe(0);
@@ -1953,8 +2010,6 @@ describe('when rendering a sequenceDiagram with actor mirror activated', () => {
   let conf;
   beforeEach(function () {
     mermaidAPI.reset();
-    // diagram.db = sequenceDb;
-    diagram.db.clear();
     conf = diagram.db.getConfig();
     diagram.renderer.bounds.init();
   });
@@ -1967,107 +2022,15 @@ sequenceDiagram
 participant Alice`;
       diagram.renderer.bounds.init();
       await mermaidAPI.parse(str);
-      diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
+      await diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
 
       const { bounds, models } = diagram.renderer.bounds.getBounds();
       expect(bounds.startx).toBe(0);
       expect(bounds.starty).toBe(0);
       expect(bounds.stopx).toBe(conf.width);
-      expect(bounds.stopy).toBe(models.lastActor().y + models.lastActor().height + conf.boxMargin);
+      expect(bounds.stopy).toBe(
+        models.lastActor().stopy + models.lastActor().height + conf.boxMargin
+      );
     });
-  });
-});
-
-describe('when rendering a sequenceDiagram with directives', () => {
-  beforeAll(function () {
-    let conf = {
-      diagramMarginX: 50,
-      diagramMarginY: 10,
-      actorMargin: 50,
-      width: 150,
-      height: 65,
-      boxMargin: 10,
-      messageMargin: 40,
-      boxTextMargin: 15,
-      noteMargin: 25,
-    };
-    mermaidAPI.initialize({ sequence: conf });
-  });
-
-  let conf;
-  beforeEach(function () {
-    mermaidAPI.reset();
-    // diagram.db = sequenceDb;
-    diagram.db.clear();
-    conf = diagram.db.getConfig();
-    diagram.renderer.bounds.init();
-  });
-
-  it('should handle one actor, when theme is dark and logLevel is 1 DX1 (dfg1)', async () => {
-    const str = `
-%%{init: { "theme": "dark", "logLevel": 1 } }%%
-sequenceDiagram
-%%{wrap}%%
-participant Alice
-`;
-    diagram = new Diagram(str);
-
-    diagram.renderer.bounds.init();
-    await mermaidAPI.parse(str);
-
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
-
-    const { bounds, models } = diagram.renderer.bounds.getBounds();
-    const mermaid = mermaidAPI.getConfig();
-    expect(mermaid.theme).toBe('dark');
-    expect(mermaid.logLevel).toBe(1);
-    expect(bounds.startx).toBe(0);
-    expect(bounds.startx).toBe(0);
-    expect(bounds.starty).toBe(0);
-    expect(bounds.stopy).toBe(
-      models.lastActor().y + models.lastActor().height + mermaid.sequence.boxMargin
-    );
-  });
-  it('should handle one actor, when logLevel is 3 (dfg0)', async () => {
-    const str = `
-%%{initialize: { "logLevel": 3 }}%%
-sequenceDiagram
-participant Alice
-`;
-
-    diagram.parse(str);
-    diagram.renderer.draw(str, 'tst', '1.2.3', diagram);
-
-    const { bounds, models } = diagram.renderer.bounds.getBounds();
-    const mermaid = mermaidAPI.getConfig();
-    expect(mermaid.logLevel).toBe(3);
-    expect(bounds.startx).toBe(0);
-    expect(bounds.startx).toBe(0);
-    expect(bounds.starty).toBe(0);
-    expect(bounds.stopy).toBe(
-      models.lastActor().y + models.lastActor().height + mermaid.sequence.boxMargin
-    );
-  });
-  it('should hide sequence numbers when autonumber is removed when autonumber is enabled', async () => {
-    const str1 = `
-sequenceDiagram
-autonumber
-Alice->Bob:Hello Bob, how are you?
-Note right of Bob: Bob thinks
-Bob-->Alice: I am good thanks!`;
-
-    await mermaidAPI.parse(str1);
-    diagram.renderer.draw(str1, 'tst', '1.2.3', diagram); // needs to be rendered for the correct value of visibility auto numbers
-    expect(diagram.db.showSequenceNumbers()).toBe(true);
-
-    const str2 = `
-sequenceDiagram
-Alice->Bob:Hello Bob, how are you?
-Note right of Bob: Bob thinks
-Bob-->Alice: I am good thanks!`;
-
-    await mermaidAPI.parse(str2);
-    diagram.renderer.draw(str2, 'tst', '1.2.3', diagram);
-    expect(diagram.db.showSequenceNumbers()).toBe(false);
   });
 });

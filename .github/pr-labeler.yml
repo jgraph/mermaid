@@ -1,3 +1,22 @@
-'Type: Bug / Error': 'bug/*'
-'Type: Enhancement': 'feature/*'
-'Type: Other': 'other/*'
+# yaml-language-server: $schema=https://raw.githubusercontent.com/release-drafter/release-drafter/master/schema.json
+autolabeler:
+  - label: 'Type: Bug / Error'
+    branch:
+      - '/bug\/.+/'
+      - '/fix\/.+/'
+  - label: 'Type: Enhancement'
+    branch:
+      - '/feature\/.+/'
+      - '/feat\/.+/'
+  - label: 'Type: Other'
+    branch:
+      - '/other\/.+/'
+      - '/chore\/.+/'
+      - '/test\/.+/'
+      - '/refactor\/.+/'
+  - label: 'Area: Documentation'
+    branch:
+      - '/docs\/.+/'
+
+template: |
+  This field is unused, as we only use this config file for labeling PRs.

@@ -1,14 +1,14 @@
 // @ts-nocheck TODO: fix file
-import { select, selectAll } from 'd3';
-import svgDraw, { drawText, fixLifeLineHeights } from './svgDraw.js';
+import { select } from 'd3';
+import svgDraw, { drawKatex, ACTOR_TYPE_WIDTH, drawText, fixLifeLineHeights } from './svgDraw.js';
 import { log } from '../../logger.js';
-import common from '../common/common.js';
-import * as svgDrawCommon from '../common/svgDrawCommon';
-import * as configApi from '../../config.js';
+import common, { calculateMathMLDimensions, hasKatex } from '../common/common.js';
+import * as svgDrawCommon from '../common/svgDrawCommon.js';
+import { getConfig } from '../../diagram-api/diagramAPI.js';
 import assignWithDepth from '../../assignWithDepth.js';
 import utils from '../../utils.js';
 import { configureSvgSize } from '../../setupGraphViewbox.js';
-import { Diagram } from '../../Diagram.js';
+import type { Diagram } from '../../Diagram.js';
 
 let conf = {};
 
@@ -93,7 +93,7 @@ export const bounds = {
       stopy: undefined,
     };
     this.verticalPos = 0;
-    setConf(configApi.getConfig());
+    setConf(getConfig());
   },
   updateVal: function (obj, key, val, fun) {
     if (obj[key] === undefined) {
@@ -239,7 +239,7 @@ interface NoteModel {
  * @param elem - The diagram to draw to.
  * @param noteModel - Note model options.
  */
-const drawNote = function (elem: any, noteModel: NoteModel) {
+const drawNote = async function (elem: any, noteModel: NoteModel) {
   bounds.bumpVerticalPos(conf.boxMargin);
   noteModel.height = conf.boxMargin;
   noteModel.starty = bounds.getVerticalPos();
@@ -265,7 +265,7 @@ const drawNote = function (elem: any, noteModel: NoteModel) {
   textObj.textMargin = conf.noteMargin;
   textObj.valign = 'center';
 
-  const textElem = drawText(g, textObj);
+  const textElem = hasKatex(textObj.text) ? await drawKatex(g, textObj) : drawText(g, textObj);
 
   const textHeight = Math.round(
     textElem
@@ -313,15 +313,20 @@ const actorFont = (cnf) => {
  * @param msgModel - The model containing fields describing a message
  * @returns `lineStartY` - The Y coordinate at which the message line starts
  */
-function boundMessage(_diagram, msgModel): number {
+async function boundMessage(_diagram, msgModel): Promise<number> {
   bounds.bumpVerticalPos(10);
   const { startx, stopx, message } = msgModel;
   const lines = common.splitBreaks(message).length;
-  const textDims = utils.calculateTextDimensions(message, messageFont(conf));
-  const lineHeight = textDims.height / lines;
-  msgModel.height += lineHeight;
+  const isKatexMsg = hasKatex(message);
+  const textDims = isKatexMsg
+    ? await calculateMathMLDimensions(message, getConfig())
+    : utils.calculateTextDimensions(message, messageFont(conf));
 
-  bounds.bumpVerticalPos(lineHeight);
+  if (!isKatexMsg) {
+    const lineHeight = textDims.height / lines;
+    msgModel.height += lineHeight;
+    bounds.bumpVerticalPos(lineHeight);
+  }
 
   let lineStartY;
   let totalOffset = textDims.height - 10;
@@ -362,7 +367,7 @@ function boundMessage(_diagram, msgModel): number {
  * @param lineStartY - The Y coordinate at which the message line starts
  * @param diagObj - The diagram object.
  */
-const drawMessage = function (diagram, msgModel, lineStartY: number, diagObj: Diagram) {
+const drawMessage = async function (diagram, msgModel, lineStartY: number, diagObj: Diagram) {
   const { startx, stopx, starty, message, type, sequenceIndex, sequenceVisible } = msgModel;
   const textDims = utils.calculateTextDimensions(message, messageFont(conf));
   const textObj = svgDrawCommon.getTextObj();
@@ -380,7 +385,9 @@ const drawMessage = function (diagram, msgModel, lineStartY: number, diagObj: Di
   textObj.textMargin = conf.wrapPadding;
   textObj.tspan = false;
 
-  drawText(diagram, textObj);
+  hasKatex(textObj.text)
+    ? await drawKatex(diagram, textObj, { startx, stopx, starty: lineStartY })
+    : drawText(diagram, textObj);
 
   const textWidth = textDims.width;
 
@@ -480,29 +487,19 @@ const drawMessage = function (diagram, msgModel, lineStartY: number, diagObj: Di
   }
 };
 
-export const drawActors = function (
+const addActorRenderingData = async function (
   diagram,
   actors,
+  createdActors,
   actorKeys,
   verticalPos,
-  configuration,
   messages,
   isFooter
 ) {
-  if (configuration.hideUnusedParticipants === true) {
-    const newActors = new Set();
-    messages.forEach((message) => {
-      newActors.add(message.from);
-      newActors.add(message.to);
-    });
-    actorKeys = actorKeys.filter((actorKey) => newActors.has(actorKey));
-  }
-
-  // Draw the actors
   let prevWidth = 0;
   let prevMargin = 0;
-  let maxHeight = 0;
   let prevBox = undefined;
+  let maxHeight = 0;
 
   for (const actorKey of actorKeys) {
     const actor = actors[actorKey];
@@ -530,12 +527,16 @@ export const drawActors = function (
     actor.height = common.getMax(actor.height || conf.height, conf.height);
     actor.margin = actor.margin || conf.actorMargin;
 
-    actor.x = prevWidth + prevMargin;
-    actor.y = bounds.getVerticalPos();
+    maxHeight = common.getMax(maxHeight, actor.height);
 
-    // Draw the box with the attached line
-    const height = svgDraw.drawActor(diagram, actor, conf, isFooter);
-    maxHeight = common.getMax(maxHeight, height);
+    // if the actor is created by a message, widen margin
+    if (createdActors[actor.name]) {
+      prevMargin += actor.width / 2;
+    }
+
+    actor.x = prevWidth + prevMargin;
+    actor.starty = bounds.getVerticalPos();
+
     bounds.insert(actor.x, verticalPos, actor.x + actor.width, actor.height);
 
     prevWidth += actor.width + prevMargin;
@@ -554,6 +555,28 @@ export const drawActors = function (
 
   // Add a margin between the actor boxes and the first arrow
   bounds.bumpVerticalPos(maxHeight);
+};
+
+export const drawActors = async function (diagram, actors, actorKeys, isFooter) {
+  if (!isFooter) {
+    for (const actorKey of actorKeys) {
+      const actor = actors[actorKey];
+      // Draw the box with the attached line
+      await svgDraw.drawActor(diagram, actor, conf, false);
+    }
+  } else {
+    let maxHeight = 0;
+    bounds.bumpVerticalPos(conf.boxMargin * 2);
+    for (const actorKey of actorKeys) {
+      const actor = actors[actorKey];
+      if (!actor.stopy) {
+        actor.stopy = bounds.getVerticalPos();
+      }
+      const height = await svgDraw.drawActor(diagram, actor, conf, true);
+      maxHeight = common.getMax(maxHeight, height);
+    }
+    bounds.bumpVerticalPos(maxHeight + conf.boxMargin);
+  }
 };
 
 export const drawActorsPopup = function (diagram, actors, actorKeys, doc) {
@@ -608,10 +631,10 @@ const activationBounds = function (actor, actors) {
 
   const left = activations.reduce(function (acc, activation) {
     return common.getMin(acc, activation.startx);
-  }, actorObj.x + actorObj.width / 2);
+  }, actorObj.x + actorObj.width / 2 - 1);
   const right = activations.reduce(function (acc, activation) {
     return common.getMax(acc, activation.stopx);
-  }, actorObj.x + actorObj.width / 2);
+  }, actorObj.x + actorObj.width / 2 + 1);
   return [left, right];
 };
 
@@ -636,6 +659,95 @@ function adjustLoopHeightForWrap(loopWidths, msg, preMargin, postMargin, addLoop
 }
 
 /**
+ * Adjust the msgModel and the actor for the rendering in case the latter is created or destroyed by the msg
+ * @param msg - the potentially creating or destroying message
+ * @param msgModel - the model associated with the message
+ * @param lineStartY - the y position of the message line
+ * @param index - the index of the current actor under consideration
+ * @param actors - the array of all actors
+ * @param createdActors - the array of actors created in the diagram
+ * @param destroyedActors - the array of actors destroyed in the diagram
+ */
+function adjustCreatedDestroyedData(
+  msg,
+  msgModel,
+  lineStartY,
+  index,
+  actors,
+  createdActors,
+  destroyedActors
+) {
+  function receiverAdjustment(actor, adjustment) {
+    if (actor.x < actors[msg.from].x) {
+      bounds.insert(
+        msgModel.stopx - adjustment,
+        msgModel.starty,
+        msgModel.startx,
+        msgModel.stopy + actor.height / 2 + conf.noteMargin
+      );
+      msgModel.stopx = msgModel.stopx + adjustment;
+    } else {
+      bounds.insert(
+        msgModel.startx,
+        msgModel.starty,
+        msgModel.stopx + adjustment,
+        msgModel.stopy + actor.height / 2 + conf.noteMargin
+      );
+      msgModel.stopx = msgModel.stopx - adjustment;
+    }
+  }
+
+  function senderAdjustment(actor, adjustment) {
+    if (actor.x < actors[msg.to].x) {
+      bounds.insert(
+        msgModel.startx - adjustment,
+        msgModel.starty,
+        msgModel.stopx,
+        msgModel.stopy + actor.height / 2 + conf.noteMargin
+      );
+      msgModel.startx = msgModel.startx + adjustment;
+    } else {
+      bounds.insert(
+        msgModel.stopx,
+        msgModel.starty,
+        msgModel.startx + adjustment,
+        msgModel.stopy + actor.height / 2 + conf.noteMargin
+      );
+      msgModel.startx = msgModel.startx - adjustment;
+    }
+  }
+
+  // if it is a create message
+  if (createdActors[msg.to] == index) {
+    const actor = actors[msg.to];
+    const adjustment = actor.type == 'actor' ? ACTOR_TYPE_WIDTH / 2 + 3 : actor.width / 2 + 3;
+    receiverAdjustment(actor, adjustment);
+    actor.starty = lineStartY - actor.height / 2;
+    bounds.bumpVerticalPos(actor.height / 2);
+  }
+  // if it is a destroy sender message
+  else if (destroyedActors[msg.from] == index) {
+    const actor = actors[msg.from];
+    if (conf.mirrorActors) {
+      const adjustment = actor.type == 'actor' ? ACTOR_TYPE_WIDTH / 2 : actor.width / 2;
+      senderAdjustment(actor, adjustment);
+    }
+    actor.stopy = lineStartY - actor.height / 2;
+    bounds.bumpVerticalPos(actor.height / 2);
+  }
+  // if it is a destroy receiver message
+  else if (destroyedActors[msg.to] == index) {
+    const actor = actors[msg.to];
+    if (conf.mirrorActors) {
+      const adjustment = actor.type == 'actor' ? ACTOR_TYPE_WIDTH / 2 + 3 : actor.width / 2 + 3;
+      receiverAdjustment(actor, adjustment);
+    }
+    actor.stopy = lineStartY - actor.height / 2;
+    bounds.bumpVerticalPos(actor.height / 2);
+  }
+}
+
+/**
  * Draws a sequenceDiagram in the tag with id: id based on the graph definition in text.
  *
  * @param _text - The text of the diagram
@@ -643,12 +755,9 @@ function adjustLoopHeightForWrap(loopWidths, msg, preMargin, postMargin, addLoop
  * @param _version - Mermaid version from package.json
  * @param diagObj - A standard diagram containing the db and the text and type etc of the diagram
  */
-export const draw = function (_text: string, id: string, _version: string, diagObj: Diagram) {
-  const { securityLevel, sequence } = configApi.getConfig();
+export const draw = async function (_text: string, id: string, _version: string, diagObj: Diagram) {
+  const { securityLevel, sequence } = getConfig();
   conf = sequence;
-  diagObj.db.clear();
-  // Parse the graph definition
-  diagObj.parser.parse(_text);
   // Handle root and Document for when rendering in sandbox mode
   let sandboxElement;
   if (securityLevel === 'sandbox') {
@@ -668,14 +777,16 @@ export const draw = function (_text: string, id: string, _version: string, diagO
 
   // Fetch data from the parsing
   const actors = diagObj.db.getActors();
+  const createdActors = diagObj.db.getCreatedActors();
+  const destroyedActors = diagObj.db.getDestroyedActors();
   const boxes = diagObj.db.getBoxes();
-  const actorKeys = diagObj.db.getActorKeys();
+  let actorKeys = diagObj.db.getActorKeys();
   const messages = diagObj.db.getMessages();
   const title = diagObj.db.getDiagramTitle();
   const hasBoxes = diagObj.db.hasAtLeastOneBox();
   const hasBoxTitles = diagObj.db.hasAtLeastOneBoxWithTitle();
-  const maxMessageWidthPerActor = getMaxMessageWidthPerActor(actors, messages, diagObj);
-  conf.height = calculateActorMargins(actors, maxMessageWidthPerActor, boxes);
+  const maxMessageWidthPerActor = await getMaxMessageWidthPerActor(actors, messages, diagObj);
+  conf.height = await calculateActorMargins(actors, maxMessageWidthPerActor, boxes);
 
   svgDraw.insertComputerIcon(diagram);
   svgDraw.insertDatabaseIcon(diagram);
@@ -688,8 +799,17 @@ export const draw = function (_text: string, id: string, _version: string, diagO
     }
   }
 
-  drawActors(diagram, actors, actorKeys, 0, conf, messages, false);
-  const loopWidths = calculateLoopBounds(messages, actors, maxMessageWidthPerActor, diagObj);
+  if (conf.hideUnusedParticipants === true) {
+    const newActors = new Set();
+    messages.forEach((message) => {
+      newActors.add(message.from);
+      newActors.add(message.to);
+    });
+    actorKeys = actorKeys.filter((actorKey) => newActors.has(actorKey));
+  }
+
+  await addActorRenderingData(diagram, actors, createdActors, actorKeys, 0, messages, false);
+  const loopWidths = await calculateLoopBounds(messages, actors, maxMessageWidthPerActor, diagObj);
 
   // The arrow head definition is attached to the svg once
   svgDraw.insertArrowHead(diagram);
@@ -723,14 +843,16 @@ export const draw = function (_text: string, id: string, _version: string, diagO
   let sequenceIndex = 1;
   let sequenceIndexStep = 1;
   const messagesToDraw = [];
-  messages.forEach(function (msg) {
+  const backgrounds = [];
+  let index = 0;
+  for (const msg of messages) {
     let loopModel, noteModel, msgModel;
 
     switch (msg.type) {
       case diagObj.db.LINETYPE.NOTE:
         bounds.resetVerticalPos();
         noteModel = msg.noteModel;
-        drawNote(diagram, noteModel);
+        await drawNote(diagram, noteModel);
         break;
       case diagObj.db.LINETYPE.ACTIVE_START:
         bounds.newActivation(msg, diagram, actors);
@@ -749,7 +871,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
         break;
       case diagObj.db.LINETYPE.LOOP_END:
         loopModel = bounds.endLoop();
-        svgDraw.drawLoop(diagram, loopModel, 'loop', conf);
+        await svgDraw.drawLoop(diagram, loopModel, 'loop', conf);
         loopModel.type = 'loop';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
@@ -761,7 +883,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
         break;
       case diagObj.db.LINETYPE.RECT_END:
         loopModel = bounds.endLoop();
-        svgDraw.drawBackgroundRect(diagram, loopModel);
+        backgrounds.push(loopModel);
         bounds.models.addLoop(loopModel);
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         break;
@@ -776,7 +898,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
         break;
       case diagObj.db.LINETYPE.OPT_END:
         loopModel = bounds.endLoop();
-        svgDraw.drawLoop(diagram, loopModel, 'opt', conf);
+        await svgDraw.drawLoop(diagram, loopModel, 'opt', conf);
         loopModel.type = 'opt';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
@@ -801,7 +923,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
         break;
       case diagObj.db.LINETYPE.ALT_END:
         loopModel = bounds.endLoop();
-        svgDraw.drawLoop(diagram, loopModel, 'alt', conf);
+        await svgDraw.drawLoop(diagram, loopModel, 'alt', conf);
         loopModel.type = 'alt';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
@@ -828,7 +950,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
         break;
       case diagObj.db.LINETYPE.PAR_END:
         loopModel = bounds.endLoop();
-        svgDraw.drawLoop(diagram, loopModel, 'par', conf);
+        await svgDraw.drawLoop(diagram, loopModel, 'par', conf);
         loopModel.type = 'par';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
@@ -862,7 +984,7 @@ export const draw = function (_text: string, id: string, _version: string, diagO
         break;
       case diagObj.db.LINETYPE.CRITICAL_END:
         loopModel = bounds.endLoop();
-        svgDraw.drawLoop(diagram, loopModel, 'critical', conf);
+        await svgDraw.drawLoop(diagram, loopModel, 'critical', conf);
         loopModel.type = 'critical';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
@@ -878,20 +1000,27 @@ export const draw = function (_text: string, id: string, _version: string, diagO
         break;
       case diagObj.db.LINETYPE.BREAK_END:
         loopModel = bounds.endLoop();
-        svgDraw.drawLoop(diagram, loopModel, 'break', conf);
+        await svgDraw.drawLoop(diagram, loopModel, 'break', conf);
         loopModel.type = 'break';
         bounds.bumpVerticalPos(loopModel.stopy - bounds.getVerticalPos());
         bounds.models.addLoop(loopModel);
         break;
       default:
         try {
-          // lastMsg = msg
-          bounds.resetVerticalPos();
           msgModel = msg.msgModel;
           msgModel.starty = bounds.getVerticalPos();
           msgModel.sequenceIndex = sequenceIndex;
           msgModel.sequenceVisible = diagObj.db.showSequenceNumbers();
-          const lineStartY = boundMessage(diagram, msgModel);
+          const lineStartY = await boundMessage(diagram, msgModel);
+          adjustCreatedDestroyedData(
+            msg,
+            msgModel,
+            lineStartY,
+            index,
+            actors,
+            createdActors,
+            destroyedActors
+          );
           messagesToDraw.push({ messageModel: msgModel, lineStartY: lineStartY });
           bounds.models.addMessage(msgModel);
         } catch (e) {
@@ -914,19 +1043,23 @@ export const draw = function (_text: string, id: string, _version: string, diagO
     ) {
       sequenceIndex = sequenceIndex + sequenceIndexStep;
     }
-  });
-
-  messagesToDraw.forEach((e) => drawMessage(diagram, e.messageModel, e.lineStartY, diagObj));
-
-  if (conf.mirrorActors) {
-    // Draw actors below diagram
-    bounds.bumpVerticalPos(conf.boxMargin * 2);
-    drawActors(diagram, actors, actorKeys, bounds.getVerticalPos(), conf, messages, true);
-    bounds.bumpVerticalPos(conf.boxMargin);
-    fixLifeLineHeights(diagram, bounds.getVerticalPos());
+    index++;
   }
 
-  bounds.models.boxes.forEach(function (box) {
+  log.debug('createdActors', createdActors);
+  log.debug('destroyedActors', destroyedActors);
+  await drawActors(diagram, actors, actorKeys, false);
+
+  for (const e of messagesToDraw) {
+    await drawMessage(diagram, e.messageModel, e.lineStartY, diagObj);
+  }
+  if (conf.mirrorActors) {
+    await drawActors(diagram, actors, actorKeys, true);
+  }
+  backgrounds.forEach((e) => svgDraw.drawBackgroundRect(diagram, e));
+  fixLifeLineHeights(diagram, actors, actorKeys, conf);
+
+  for (const box of bounds.models.boxes) {
     box.height = bounds.getVerticalPos() - box.y;
     bounds.insert(box.x, box.y, box.x + box.width, box.height);
     box.startx = box.x;
@@ -934,8 +1067,8 @@ export const draw = function (_text: string, id: string, _version: string, diagO
     box.stopx = box.startx + box.width;
     box.stopy = box.starty + box.height;
     box.stroke = 'rgb(0,0,0, 0.5)';
-    svgDraw.drawBox(diagram, box, conf);
-  });
+    await svgDraw.drawBox(diagram, box, conf);
+  }
 
   if (hasBoxes) {
     bounds.bumpVerticalPos(conf.boxMargin);
@@ -945,11 +1078,6 @@ export const draw = function (_text: string, id: string, _version: string, diagO
   const requiredBoxSize = drawActorsPopup(diagram, actors, actorKeys, doc);
 
   const { bounds: box } = bounds.getBounds();
-
-  // Adjust line height of actor lines now that the height of the diagram is known
-  log.debug('For line height fix Querying: #' + id + ' .actor-line');
-  const actorLines = selectAll('#' + id + ' .actor-line');
-  actorLines.attr('y2', box.stopy);
 
   // Make sure the height of the diagram supports long menus.
   let boxHeight = box.stopy - box.starty;
@@ -1008,25 +1136,25 @@ export const draw = function (_text: string, id: string, _version: string, diagO
  * @param diagObj - The diagram object.
  * @returns The max message width of each actor.
  */
-function getMaxMessageWidthPerActor(
+async function getMaxMessageWidthPerActor(
   actors: { [id: string]: any },
   messages: any[],
   diagObj: Diagram
-): { [id: string]: number } {
+): Promise<{ [id: string]: number }> {
   const maxMessageWidthPerActor = {};
 
-  messages.forEach(function (msg) {
+  for (const msg of messages) {
     if (actors[msg.to] && actors[msg.from]) {
       const actor = actors[msg.to];
 
       // If this is the first actor, and the message is left of it, no need to calculate the margin
       if (msg.placement === diagObj.db.PLACEMENT.LEFTOF && !actor.prevActor) {
-        return;
+        continue;
       }
 
       // If this is the last actor, and the message is right of it, no need to calculate the margin
       if (msg.placement === diagObj.db.PLACEMENT.RIGHTOF && !actor.nextActor) {
-        return;
+        continue;
       }
 
       const isNote = msg.placement !== undefined;
@@ -1036,7 +1164,9 @@ function getMaxMessageWidthPerActor(
       const wrappedMessage = msg.wrap
         ? utils.wrapLabel(msg.message, conf.width - 2 * conf.wrapPadding, textFont)
         : msg.message;
-      const messageDimensions = utils.calculateTextDimensions(wrappedMessage, textFont);
+      const messageDimensions = hasKatex(wrappedMessage)
+        ? await calculateMathMLDimensions(msg.message, getConfig())
+        : utils.calculateTextDimensions(wrappedMessage, textFont);
       const messageWidth = messageDimensions.width + 2 * conf.wrapPadding;
 
       /*
@@ -1101,7 +1231,7 @@ function getMaxMessageWidthPerActor(
         }
       }
     }
-  });
+  }
 
   log.debug('maxMessageWidthPerActor:', maxMessageWidthPerActor);
   return maxMessageWidthPerActor;
@@ -1132,13 +1262,13 @@ const getRequiredPopupWidth = function (actor) {
  * @param actorToMessageWidth - A map of actor key → max message width it holds
  * @param boxes - The boxes around the actors if any
  */
-function calculateActorMargins(
+async function calculateActorMargins(
   actors: { [id: string]: any },
-  actorToMessageWidth: ReturnType<typeof getMaxMessageWidthPerActor>,
+  actorToMessageWidth: Awaited<ReturnType<typeof getMaxMessageWidthPerActor>>,
   boxes
 ) {
   let maxHeight = 0;
-  Object.keys(actors).forEach((prop) => {
+  for (const prop of Object.keys(actors)) {
     const actor = actors[prop];
     if (actor.wrap) {
       actor.description = utils.wrapLabel(
@@ -1147,14 +1277,17 @@ function calculateActorMargins(
         actorFont(conf)
       );
     }
-    const actDims = utils.calculateTextDimensions(actor.description, actorFont(conf));
+    const actDims = hasKatex(actor.description)
+      ? await calculateMathMLDimensions(actor.description, getConfig())
+      : utils.calculateTextDimensions(actor.description, actorFont(conf));
+
     actor.width = actor.wrap
       ? conf.width
       : common.getMax(conf.width, actDims.width + 2 * conf.wrapPadding);
 
     actor.height = actor.wrap ? common.getMax(actDims.height, conf.height) : conf.height;
     maxHeight = common.getMax(maxHeight, actor.height);
-  });
+  }
 
   for (const actorKey in actorToMessageWidth) {
     const actor = actors[actorKey];
@@ -1205,15 +1338,17 @@ function calculateActorMargins(
   return common.getMax(maxHeight, conf.height);
 }
 
-const buildNoteModel = function (msg, actors, diagObj) {
+const buildNoteModel = async function (msg, actors, diagObj) {
   const startx = actors[msg.from].x;
   const stopx = actors[msg.to].x;
   const shouldWrap = msg.wrap && msg.message;
 
-  let textDimensions = utils.calculateTextDimensions(
-    shouldWrap ? utils.wrapLabel(msg.message, conf.width, noteFont(conf)) : msg.message,
-    noteFont(conf)
-  );
+  let textDimensions: { width: number; height: number; lineHeight?: number } = hasKatex(msg.message)
+    ? await calculateMathMLDimensions(msg.message, getConfig())
+    : utils.calculateTextDimensions(
+        shouldWrap ? utils.wrapLabel(msg.message, conf.width, noteFont(conf)) : msg.message,
+        noteFont(conf)
+      );
   const noteModel = {
     width: shouldWrap
       ? conf.width
@@ -1283,9 +1418,8 @@ const buildNoteModel = function (msg, actors, diagObj) {
 };
 
 const buildMessageModel = function (msg, actors, diagObj) {
-  let process = false;
   if (
-    [
+    ![
       diagObj.db.LINETYPE.SOLID_OPEN,
       diagObj.db.LINETYPE.DOTTED_OPEN,
       diagObj.db.LINETYPE.SOLID,
@@ -1296,17 +1430,54 @@ const buildMessageModel = function (msg, actors, diagObj) {
       diagObj.db.LINETYPE.DOTTED_POINT,
     ].includes(msg.type)
   ) {
-    process = true;
-  }
-  if (!process) {
     return {};
   }
-  const fromBounds = activationBounds(msg.from, actors);
-  const toBounds = activationBounds(msg.to, actors);
-  const fromIdx = fromBounds[0] <= toBounds[0] ? 1 : 0;
-  const toIdx = fromBounds[0] < toBounds[0] ? 0 : 1;
-  const allBounds = [...fromBounds, ...toBounds];
-  const boundedWidth = Math.abs(toBounds[toIdx] - fromBounds[fromIdx]);
+  const [fromLeft, fromRight] = activationBounds(msg.from, actors);
+  const [toLeft, toRight] = activationBounds(msg.to, actors);
+  const isArrowToRight = fromLeft <= toLeft;
+  const startx = isArrowToRight ? fromRight : fromLeft;
+  let stopx = isArrowToRight ? toLeft : toRight;
+
+  // As the line width is considered, the left and right values will be off by 2.
+  const isArrowToActivation = Math.abs(toLeft - toRight) > 2;
+
+  /**
+   * Adjust the value based on the arrow direction
+   * @param value - The value to adjust
+   * @returns The adjustment with correct sign to be added to the actual value.
+   */
+  const adjustValue = (value: number) => {
+    return isArrowToRight ? -value : value;
+  };
+
+  if (msg.from === msg.to) {
+    // This is a self reference, so we need to make sure the arrow is drawn correctly
+    // There are many checks in the downstream rendering that checks for equality.
+    // The lines on loops will be off by few pixels, but that's fine for now.
+    stopx = startx;
+  } else {
+    /**
+     * This is an edge case for the first activation.
+     * Proper fix would require significant changes.
+     * So, we set an activate flag in the message, and cross check that with isToActivation
+     * In cases where the message is to an activation that was properly detected, we don't want to move the arrow head
+     * The activation will not be detected on the first message, so we need to move the arrow head
+     */
+    if (msg.activate && !isArrowToActivation) {
+      stopx += adjustValue(conf.activationWidth / 2 - 1);
+    }
+
+    /**
+     * Shorten the length of arrow at the end and move the marker forward (using refX) to have a clean arrowhead
+     * This is not required for open arrows that don't have arrowheads
+     */
+    if (![diagObj.db.LINETYPE.SOLID_OPEN, diagObj.db.LINETYPE.DOTTED_OPEN].includes(msg.type)) {
+      stopx += adjustValue(3);
+    }
+  }
+
+  const allBounds = [fromLeft, fromRight, toLeft, toRight];
+  const boundedWidth = Math.abs(startx - stopx);
   if (msg.wrap && msg.message) {
     msg.message = utils.wrapLabel(
       msg.message,
@@ -1323,8 +1494,8 @@ const buildMessageModel = function (msg, actors, diagObj) {
       conf.width
     ),
     height: 0,
-    startx: fromBounds[fromIdx],
-    stopx: toBounds[toIdx],
+    startx,
+    stopx,
     starty: 0,
     stopy: 0,
     message: msg.message,
@@ -1335,12 +1506,12 @@ const buildMessageModel = function (msg, actors, diagObj) {
   };
 };
 
-const calculateLoopBounds = function (messages, actors, _maxWidthPerActor, diagObj) {
+const calculateLoopBounds = async function (messages, actors, _maxWidthPerActor, diagObj) {
   const loops = {};
   const stack = [];
   let current, noteModel, msgModel;
 
-  messages.forEach(function (msg) {
+  for (const msg of messages) {
     msg.id = utils.random({ length: 10 });
     switch (msg.type) {
       case diagObj.db.LINETYPE.LOOP_START:
@@ -1403,7 +1574,7 @@ const calculateLoopBounds = function (messages, actors, _maxWidthPerActor, diagO
     }
     const isNote = msg.placement !== undefined;
     if (isNote) {
-      noteModel = buildNoteModel(msg, actors, diagObj);
+      noteModel = await buildNoteModel(msg, actors, diagObj);
       msg.noteModel = noteModel;
       stack.forEach((stk) => {
         current = stk;
@@ -1442,7 +1613,7 @@ const calculateLoopBounds = function (messages, actors, _maxWidthPerActor, diagO
         });
       }
     }
-  });
+  }
   bounds.activations = [];
   log.debug('Loop type widths:', loops);
   return loops;

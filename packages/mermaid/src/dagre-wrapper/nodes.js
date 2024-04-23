@@ -1,19 +1,37 @@
 import { select } from 'd3';
 import { log } from '../logger.js';
 import { labelHelper, updateNodeBounds, insertPolygonShape } from './shapes/util.js';
-import { getConfig } from '../config.js';
+import { getConfig } from '../diagram-api/diagramAPI.js';
 import intersect from './intersect/index.js';
 import createLabel from './createLabel.js';
 import note from './shapes/note.js';
-import { parseMember } from '../diagrams/class/svgDraw.js';
 import { evaluate } from '../diagrams/common/common.js';
+import { getArrowPoints } from './blockArrowHelper.js';
+
+const formatClass = (str) => {
+  if (str) {
+    return ' ' + str;
+  }
+  return '';
+};
+const getClassesFromNode = (node, otherClasses) => {
+  return `${otherClasses ? otherClasses : 'node default'}${formatClass(node.classes)} ${formatClass(
+    node.class
+  )}`;
+};
 
 const question = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const w = bbox.width + node.padding;
   const h = bbox.height + node.padding;
   const s = w + h;
+
   const points = [
     { x: s / 2, y: 0 },
     { x: s, y: -s / 2 },
@@ -70,7 +88,12 @@ const choice = (parent, node) => {
 };
 
 const hexagon = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const f = 4;
   const h = bbox.height + node.padding;
@@ -96,8 +119,34 @@ const hexagon = async (parent, node) => {
   return shapeSvg;
 };
 
-const rect_left_inv_arrow = async (parent, node) => {
+const block_arrow = async (parent, node) => {
   const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+
+  const f = 2;
+  const h = bbox.height + 2 * node.padding;
+  const m = h / f;
+  const w = bbox.width + 2 * m + node.padding;
+
+  const points = getArrowPoints(node.directions, bbox, node);
+
+  const blockArrow = insertPolygonShape(shapeSvg, w, h, points);
+  blockArrow.attr('style', node.style);
+  updateNodeBounds(node, blockArrow);
+
+  node.intersect = function (point) {
+    return intersect.polygon(node, points, point);
+  };
+
+  return shapeSvg;
+};
+
+const rect_left_inv_arrow = async (parent, node) => {
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const w = bbox.width + node.padding;
   const h = bbox.height + node.padding;
@@ -123,7 +172,7 @@ const rect_left_inv_arrow = async (parent, node) => {
 };
 
 const lean_right = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(parent, node, getClassesFromNode(node), true);
 
   const w = bbox.width + node.padding;
   const h = bbox.height + node.padding;
@@ -146,7 +195,12 @@ const lean_right = async (parent, node) => {
 };
 
 const lean_left = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const w = bbox.width + node.padding;
   const h = bbox.height + node.padding;
@@ -169,7 +223,12 @@ const lean_left = async (parent, node) => {
 };
 
 const trapezoid = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const w = bbox.width + node.padding;
   const h = bbox.height + node.padding;
@@ -192,7 +251,12 @@ const trapezoid = async (parent, node) => {
 };
 
 const inv_trapezoid = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const w = bbox.width + node.padding;
   const h = bbox.height + node.padding;
@@ -215,7 +279,12 @@ const inv_trapezoid = async (parent, node) => {
 };
 
 const rect_right_inv_arrow = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const w = bbox.width + node.padding;
   const h = bbox.height + node.padding;
@@ -239,7 +308,12 @@ const rect_right_inv_arrow = async (parent, node) => {
 };
 
 const cylinder = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const w = bbox.width + node.padding;
   const rx = w / 2;
@@ -314,6 +388,53 @@ const rect = async (parent, node) => {
   const { shapeSvg, bbox, halfPadding } = await labelHelper(
     parent,
     node,
+    'node ' + node.classes + ' ' + node.class,
+    true
+  );
+
+  // add the rect
+  const rect = shapeSvg.insert('rect', ':first-child');
+
+  // const totalWidth = bbox.width + node.padding * 2;
+  // const totalHeight = bbox.height + node.padding * 2;
+  const totalWidth = node.positioned ? node.width : bbox.width + node.padding;
+  const totalHeight = node.positioned ? node.height : bbox.height + node.padding;
+  const x = node.positioned ? -totalWidth / 2 : -bbox.width / 2 - halfPadding;
+  const y = node.positioned ? -totalHeight / 2 : -bbox.height / 2 - halfPadding;
+  rect
+    .attr('class', 'basic label-container')
+    .attr('style', node.style)
+    .attr('rx', node.rx)
+    .attr('ry', node.ry)
+    .attr('x', x)
+    .attr('y', y)
+    .attr('width', totalWidth)
+    .attr('height', totalHeight);
+
+  if (node.props) {
+    const propKeys = new Set(Object.keys(node.props));
+    if (node.props.borders) {
+      applyNodePropertyBorders(rect, node.props.borders, totalWidth, totalHeight);
+      propKeys.delete('borders');
+    }
+    propKeys.forEach((propKey) => {
+      log.warn(`Unknown node property ${propKey}`);
+    });
+  }
+
+  updateNodeBounds(node, rect);
+
+  node.intersect = function (point) {
+    return intersect.rect(node, point);
+  };
+
+  return shapeSvg;
+};
+
+const composite = async (parent, node) => {
+  const { shapeSvg, bbox, halfPadding } = await labelHelper(
+    parent,
+    node,
     'node ' + node.classes,
     true
   );
@@ -323,17 +444,17 @@ const rect = async (parent, node) => {
 
   // const totalWidth = bbox.width + node.padding * 2;
   // const totalHeight = bbox.height + node.padding * 2;
-  const totalWidth = bbox.width + node.padding;
-  const totalHeight = bbox.height + node.padding;
+  const totalWidth = node.positioned ? node.width : bbox.width + node.padding;
+  const totalHeight = node.positioned ? node.height : bbox.height + node.padding;
+  const x = node.positioned ? -totalWidth / 2 : -bbox.width / 2 - halfPadding;
+  const y = node.positioned ? -totalHeight / 2 : -bbox.height / 2 - halfPadding;
   rect
-    .attr('class', 'basic label-container')
+    .attr('class', 'basic cluster composite label-container')
     .attr('style', node.style)
     .attr('rx', node.rx)
     .attr('ry', node.ry)
-    // .attr('x', -bbox.width / 2 - node.padding)
-    // .attr('y', -bbox.height / 2 - node.padding)
-    .attr('x', -bbox.width / 2 - halfPadding)
-    .attr('y', -bbox.height / 2 - halfPadding)
+    .attr('x', x)
+    .attr('y', y)
     .attr('width', totalWidth)
     .attr('height', totalHeight);
 
@@ -360,7 +481,7 @@ const rect = async (parent, node) => {
 const labelRect = async (parent, node) => {
   const { shapeSvg } = await labelHelper(parent, node, 'label', true);
 
-  log.trace('Classes = ', node.classes);
+  log.trace('Classes = ', node.class);
   // add the rect
   const rect = shapeSvg.insert('rect', ':first-child');
 
@@ -545,7 +666,12 @@ const rectWithTitle = (parent, node) => {
 };
 
 const stadium = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const h = bbox.height + node.padding;
   const w = bbox.width + h / 4 + node.padding;
@@ -571,7 +697,12 @@ const stadium = async (parent, node) => {
 };
 
 const circle = async (parent, node) => {
-  const { shapeSvg, bbox, halfPadding } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox, halfPadding } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
   const circle = shapeSvg.insert('circle', ':first-child');
 
   // center the circle around its coordinate
@@ -596,11 +727,18 @@ const circle = async (parent, node) => {
 };
 
 const doublecircle = async (parent, node) => {
-  const { shapeSvg, bbox, halfPadding } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox, halfPadding } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
   const gap = 5;
   const circleGroup = shapeSvg.insert('g', ':first-child');
   const outerCircle = circleGroup.insert('circle');
   const innerCircle = circleGroup.insert('circle');
+
+  circleGroup.attr('class', node.class);
 
   // center the circle around its coordinate
   outerCircle
@@ -632,7 +770,12 @@ const doublecircle = async (parent, node) => {
 };
 
 const subroutine = async (parent, node) => {
-  const { shapeSvg, bbox } = await labelHelper(parent, node, undefined, true);
+  const { shapeSvg, bbox } = await labelHelper(
+    parent,
+    node,
+    getClassesFromNode(node, undefined),
+    true
+  );
 
   const w = bbox.width + node.padding;
   const h = bbox.height + node.padding;
@@ -806,8 +949,8 @@ const class_box = (parent, node) => {
     maxWidth = classTitleBBox.width;
   }
   const classAttributes = [];
-  node.classData.members.forEach((str) => {
-    const parsedInfo = parseMember(str);
+  node.classData.members.forEach((member) => {
+    const parsedInfo = member.getDisplayDetails();
     let parsedText = parsedInfo.displayText;
     if (getConfig().flowchart.htmlLabels) {
       parsedText = parsedText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -840,8 +983,8 @@ const class_box = (parent, node) => {
   maxHeight += lineHeight;
 
   const classMethods = [];
-  node.classData.methods.forEach((str) => {
-    const parsedInfo = parseMember(str);
+  node.classData.methods.forEach((member) => {
+    const parsedInfo = member.getDisplayDetails();
     let displayText = parsedInfo.displayText;
     if (getConfig().flowchart.htmlLabels) {
       displayText = displayText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -915,7 +1058,9 @@ const class_box = (parent, node) => {
         ((-1 * maxHeight) / 2 + verticalPos + lineHeight / 2) +
         ')'
     );
-    verticalPos += classTitleBBox.height + rowPadding;
+    //get the height of the bounding box of each member if exists
+    const memberBBox = lbl?.getBBox();
+    verticalPos += (memberBBox?.height ?? 0) + rowPadding;
   });
 
   verticalPos += lineHeight;
@@ -933,10 +1078,12 @@ const class_box = (parent, node) => {
       'transform',
       'translate( ' + -maxWidth / 2 + ', ' + ((-1 * maxHeight) / 2 + verticalPos) + ')'
     );
-    verticalPos += classTitleBBox.height + rowPadding;
+    const memberBBox = lbl?.getBBox();
+    verticalPos += (memberBBox?.height ?? 0) + rowPadding;
   });
 
   rect
+    .attr('style', node.style)
     .attr('class', 'outer title-state')
     .attr('x', -maxWidth / 2 - halfPadding)
     .attr('y', -(maxHeight / 2) - halfPadding)
@@ -954,6 +1101,7 @@ const class_box = (parent, node) => {
 
 const shapes = {
   rhombus: question,
+  composite,
   question,
   rect,
   labelRect,
@@ -963,6 +1111,7 @@ const shapes = {
   doublecircle,
   stadium,
   hexagon,
+  block_arrow,
   rect_left_inv_arrow,
   lean_right,
   lean_left,
@@ -1005,6 +1154,9 @@ export const insertNode = async (elem, node, dir) => {
   if (node.class) {
     el.attr('class', 'node default ' + node.class);
   }
+  // MC Special
+  newEl.attr('data-node', 'true');
+  newEl.attr('data-id', node.id);
 
   nodeElems[node.id] = newEl;
 
@@ -1022,7 +1174,6 @@ export const clear = () => {
 
 export const positionNode = (node) => {
   const el = nodeElems[node.id];
-
   log.trace(
     'Transforming node',
     node.diff,

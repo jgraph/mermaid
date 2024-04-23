@@ -16,8 +16,8 @@ import { teamMembers } from '../contributors';
           <p text-lg max-w-200 text-center leading-7>
             <Contributors />
             <br />
-            <a href="https://chat.vitest.dev" rel="noopener noreferrer">Join the community</a> and
-            get involved!
+            <a href="https://discord.gg/AgrbSrBer3" rel="noopener noreferrer">Join the community</a>
+            and get involved!
           </p>
         </div>
       </main>

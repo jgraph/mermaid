@@ -1,5 +1,4 @@
-import { parseDirective as _parseDirective } from '../../directiveUtils.js';
-import * as commonDb from '../../commonDb.js';
+import * as commonDb from '../common/commonDb.js';
 let currentSection = '';
 let currentTaskId = 0;
 
@@ -8,10 +7,6 @@ const tasks = [];
 const rawTasks = [];
 
 export const getCommonDb = () => commonDb;
-
-export const parseDirective = (statement, context, type) => {
-  _parseDirective(this, statement, context, type);
-};
 
 export const clear = function () {
   sections.length = 0;
@@ -58,7 +53,7 @@ export const addTask = function (period, length, event) {
 };
 
 export const addEvent = function (event) {
-  // fetch current task with currnetTaskId
+  // fetch current task with currentTaskId
   const currentTask = rawTasks.find((task) => task.id === currentTaskId - 1);
   //add event to the events array
   currentTask.events.push(event);
@@ -104,5 +99,4 @@ export default {
   addTask,
   addTaskOrg,
   addEvent,
-  parseDirective,
 };

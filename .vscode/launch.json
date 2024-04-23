@@ -17,8 +17,9 @@
       "name": "Docs generation",
       "type": "node",
       "request": "launch",
-      "args": ["src/docs.mts"],
-      "runtimeArgs": ["--loader", "ts-node/esm"],
+      "args": ["scripts/docs.cli.mts"],
+      // we'll need to change this to --import in Node.JS v20.6.0 and up
+      "runtimeArgs": ["--loader", "tsx/esm"],
       "cwd": "${workspaceRoot}/packages/mermaid",
       "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
       "smartStep": true,
