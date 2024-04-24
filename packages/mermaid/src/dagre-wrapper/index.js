@@ -175,7 +175,7 @@ export const render = async (elem, graph, markers, diagramType, id) => {
   const siteConfig = getConfig();
   await recursiveRender(elem, graph, diagramType, id, undefined, siteConfig);
   // Graph is ready now to be converted to draw.io format
-  Editor.mermaidToDrawio(graph, diagramtype);
+  Editor.mermaidToDrawio(graph, diagramType);
 };
 
 // const shapeDefinitions = {};

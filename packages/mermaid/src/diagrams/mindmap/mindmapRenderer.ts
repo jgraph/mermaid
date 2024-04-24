@@ -156,6 +156,9 @@ function positionNodes(db: MindmapDB, cy: cytoscape.Core) {
   });
 }
 
+declare global {
+  var Editor: any;
+}
 export const draw: DrawDefinition = async (text, id, _version, diagObj) => {
   log.debug('Rendering mindmap diagram\n' + text);
 
@@ -195,7 +198,7 @@ export const draw: DrawDefinition = async (text, id, _version, diagObj) => {
     conf.mindmap?.useMaxWidth ?? defaultConfig.mindmap.useMaxWidth
   );
   // Graph is ready now to be converted to draw.io format
-  Editor.mermaidToDrawio(cy, 'Mindmap');
+  globalThis.Editor.mermaidToDrawio(cy, 'Mindmap');
 };
 
 export default {
