@@ -848,6 +848,7 @@ export const draw = async function (text, id, _version, diagObj) {
   setupGraphViewbox({}, svg, conf.diagramPadding, conf.useMaxWidth);
   // Remove element after layout
   renderEl.remove();
+  Editor.mermaidToDrawio(graph, 'flowchart-elk');
 };
 
 const drawNodes = (relX, relY, nodeArray, svg, subgraphsEl, diagObj, depth) => {
