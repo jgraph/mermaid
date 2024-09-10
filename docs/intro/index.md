@@ -55,6 +55,10 @@ For a more detailed introduction to Mermaid and some of its more basic uses, loo
 
 **Thanks to all involved, people committing pull requests, people answering questions and special thanks to Tyler Long who is helping me maintain the project 🙏**
 
+Our PR Visual Regression Testing is powered by [Argos](https://argos-ci.com/?utm_source=mermaid&utm_campaign=oss) with their generous Open Source plan. It makes the process of reviewing PRs with visual changes a breeze.
+
+[![Covered by Argos Visual Testing](https://argos-ci.com/badge-large.svg)](https://argos-ci.com?utm_source=mermaid&utm_campaign=oss)
+
 In our release process we rely heavily on visual regression tests using [applitools](https://applitools.com/). Applitools is a great service which has been easy to use and integrate with our tests.
 
 <a href="https://applitools.com/">
@@ -311,23 +315,25 @@ xychart-beta
 
 ### CDN
 
-    https://cdn.jsdelivr.net/npm/mermaid@<version>/dist/
+```
+https://cdn.jsdelivr.net/npm/mermaid@<version>/dist/
+```
 
 To select a version:
 
 Replace `<version>` with the desired version number.
 
-Latest Version: <https://cdn.jsdelivr.net/npm/mermaid@10>
+Latest Version: <https://cdn.jsdelivr.net/npm/mermaid@11>
 
 ## Deploying Mermaid
 
 To Deploy Mermaid:
 
-1.  You will need to install node v16, which would have npm
-2.  Install mermaid
-    - NPM: `npm i mermaid`
-    - Yarn: `yarn add mermaid`
-    - Pnpm: `pnpm add mermaid`
+1. You will need to install node v16, which would have npm
+2. Install mermaid
+   - NPM: `npm i mermaid`
+   - Yarn: `yarn add mermaid`
+   - Pnpm: `pnpm add mermaid`
 
 ### [Mermaid API](../config/setup/README.md):
 
@@ -335,7 +341,7 @@ To Deploy Mermaid:
 
 ```html
 <script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
   mermaid.initialize({ startOnLoad: true });
 </script>
 ```
