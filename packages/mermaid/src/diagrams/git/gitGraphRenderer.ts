@@ -947,7 +947,7 @@ export const draw: DrawDefinition = function (txt, id, ver, diagObj) {
   );
 
   // Graph is ready now to be converted to draw.io format
-  Editor.mermaidToDrawio({commits: allCommitsDict, branches, branchPos, commitPos, DEFAULT_GITGRAPH_CONFIG}, 'gitgraph');
+  Editor.mermaidToDrawio({commits: allCommitsDict, branches, branchPos, commitPos, gitGraphConfig: DEFAULT_GITGRAPH_CONFIG}, 'gitgraph');
 };
 
 export default {

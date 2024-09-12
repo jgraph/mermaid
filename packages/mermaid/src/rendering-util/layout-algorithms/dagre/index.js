@@ -374,4 +374,5 @@ export const render = async (data4Layout, svg) => {
     undefined,
     siteConfig
   );
+  Editor.mermaidToDrawio(graph, data4Layout.type);
 };
