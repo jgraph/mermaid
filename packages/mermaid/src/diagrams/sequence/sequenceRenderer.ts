@@ -3,6 +3,7 @@ import { select } from 'd3';
 import svgDraw, { drawKatex, ACTOR_TYPE_WIDTH, drawText, fixLifeLineHeights } from './svgDraw.js';
 import { log } from '../../logger.js';
 import common, { calculateMathMLDimensions, hasKatex } from '../common/common.js';
+import { getUrl } from '../common/common.js';
 import * as svgDrawCommon from '../common/svgDrawCommon.js';
 import { getConfig } from '../../diagram-api/diagramAPI.js';
 import assignWithDepth from '../../assignWithDepth.js';
@@ -234,7 +235,7 @@ interface NoteModel {
 }
 
 /**
- * Draws an note in the diagram with the attached line
+ * Draws a note in the diagram with the attached line
  *
  * @param elem - The diagram to draw to.
  * @param noteModel - Note model options.
@@ -451,14 +452,7 @@ const drawMessage = async function (diagram, msgModel, lineStartY: number, diagO
 
   let url = '';
   if (conf.arrowMarkerAbsolute) {
-    url =
-      window.location.protocol +
-      '//' +
-      window.location.host +
-      window.location.pathname +
-      window.location.search;
-    url = url.replace(/\(/g, '\\(');
-    url = url.replace(/\)/g, '\\)');
+    url = getUrl(true);
   }
 
   line.attr('stroke-width', 2);
@@ -484,7 +478,29 @@ const drawMessage = async function (diagram, msgModel, lineStartY: number, diagO
 
   // add node number
   if (sequenceVisible || conf.showSequenceNumbers) {
-    line.attr('marker-start', 'url(' + url + '#sequencenumber)');
+    const isBidirectional =
+      type === diagObj.db.LINETYPE.BIDIRECTIONAL_SOLID ||
+      type === diagObj.db.LINETYPE.BIDIRECTIONAL_DOTTED;
+
+    if (isBidirectional) {
+      const SEQUENCE_NUMBER_RADIUS = 6;
+
+      if (startx < stopx) {
+        line.attr('x1', startx + 2 * SEQUENCE_NUMBER_RADIUS);
+      } else {
+        line.attr('x1', startx + SEQUENCE_NUMBER_RADIUS);
+      }
+    }
+
+    diagram
+      .append('line')
+      .attr('x1', startx)
+      .attr('y1', lineStartY)
+      .attr('x2', startx)
+      .attr('y2', lineStartY)
+      .attr('stroke-width', 0)
+      .attr('marker-start', 'url(' + url + '#sequencenumber)');
+
     diagram
       .append('text')
       .attr('x', startx)

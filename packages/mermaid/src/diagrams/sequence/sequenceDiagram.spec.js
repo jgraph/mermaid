@@ -350,6 +350,26 @@ Bob-->Alice-in-Wonderland:I am good thanks!`);
     expect(messages[1].from).toBe('Bob');
   });
 
+  it('should handle equals in participant names', async () => {
+    const diagram = await Diagram.fromText(`
+sequenceDiagram
+participant Alice=Wonderland
+participant Bob
+Alice=Wonderland->Bob:Hello Bob, how are - you?
+Bob-->Alice=Wonderland:I am good thanks!`);
+
+    const actors = diagram.db.getActors();
+    expect([...actors.keys()]).toEqual(['Alice=Wonderland', 'Bob']);
+    expect(actors.get('Alice=Wonderland').description).toBe('Alice=Wonderland');
+    expect(actors.get('Bob').description).toBe('Bob');
+
+    const messages = diagram.db.getMessages();
+
+    expect(messages.length).toBe(2);
+    expect(messages[0].from).toBe('Alice=Wonderland');
+    expect(messages[1].from).toBe('Bob');
+  });
+
   it('should alias participants', async () => {
     const diagram = await Diagram.fromText(`
 sequenceDiagram
@@ -2021,5 +2041,21 @@ describe('sequence db class', () => {
     for (const fun of functionsUsedInParser) {
       expect(Object.hasOwn(sequenceDb, fun)).toBe(true);
     }
+  });
+  // This test verifies that messages with a colon but no content (e.g., "Alice->>Bob:")
+  // are correctly parsed as valid messages with an empty string as the message content.
+
+  it('should parse a message with a trailing colon but no content', async () => {
+    const diagram = await Diagram.fromText(`
+sequenceDiagram
+Alice->>Bob:
+Bob->>Alice:Got it!
+`);
+
+    const messages = diagram.db.getMessages();
+    expect(messages.length).toBe(2);
+    expect(messages[0].message).toBe('');
+    expect(messages[0].from).toBe('Alice');
+    expect(messages[0].to).toBe('Bob');
   });
 });

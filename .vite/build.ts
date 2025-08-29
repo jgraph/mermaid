@@ -100,6 +100,10 @@ export const getBuildConfig = ({ minify, core, watch, entryName }: BuildOptions)
       }),
       ...visualizerOptions(packageName, core),
     ],
+    define: {
+      // Needs to be string
+      includeLargeFeatures: 'true',
+    },
   };
 
   if (watch && config.build) {
